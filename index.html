@@ -1,205 +1,231 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS (PWA) – Dual + Manual + Sonidos WebAudio + Alerta + Pausa</title>
-  <meta name="theme-color" content="#1877F2" />
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon-192.png" />
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
-      });
-    }
-  </script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    :root { --safe-bottom: env(safe-area-inset-bottom); --safe-top: env(safe-area-inset-top); }
-    video { object-fit: cover; }
-    @media print { .no-print { display:none!important; } }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
-    #quaggaArea { position: relative; background: #000; }
-    .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
-    /* Área de cámara compacta (≈ mitad de alto) */
-    .cam-compact { height: 45vh; max-height: 420px; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Conteo CKLASS – PWA con Histórico</title>
+<meta name="theme-color" content="#1877F2" />
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" />
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+    });
+  }
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --safe-bottom: env(safe-area-inset-bottom); --safe-top: env(safe-area-inset-top); }
+  video { object-fit: cover; }
+  @media print { .no-print { display:none!important; } }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
+  #quaggaArea { position: relative; background: #000; }
+  .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
+  .cam-compact { height: 45vh; max-height: 420px; }
+  .btn { @apply px-3 py-2 text-sm rounded-lg; }
+</style>
 </head>
 <body class="bg-gray-50 text-gray-900">
-  <div class="max-w-7xl mx-auto p-4">
-    <header class="mb-4 no-print">
-      <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
-      <p class="text-sm text-gray-600">Importar → Escanear (cámara/lector) o Registrar manual → Reporte. HTTPS/localhost para cámara.</p>
-    </header>
+<div class="max-w-7xl mx-auto p-4">
+  <header class="mb-4 no-print">
+    <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
+    <p class="text-sm text-gray-600">Importar → Escanear → Guardar histórico → Nuevo conteo. HTTPS/localhost para cámara.</p>
+  </header>
 
-    <div class="border-b border-gray-200 mb-4 no-print">
-      <nav class="-mb-px flex gap-2" id="tabs">
-        <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
-        <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
-        <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Reporte</button>
-      </nav>
-    </div>
-
-    <!-- Importar -->
-    <section id="tab-importar" class="tab-pane block">
-      <div class="grid md:grid-cols-2 gap-4">
-        <div class="bg-white rounded-2xl shadow p-4">
-          <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-          <p class="text-xs text-gray-600 mb-2">Esperado: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code>.</p>
-          <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
-          <div id="catalogoStatus" class="text-xs text-gray-600">Sin cargar.</div>
-        </div>
-
-        <div class="bg-white rounded-2xl shadow p-4">
-          <h2 class="font-semibold mb-2">Existencia física (CSV)</h2>
-          <p class="text-xs text-gray-600 mb-2">Compatibles: <code>MOD,COLOR,TALLA,Cantidad</code> ó <code>codigo-Color-Talla,Cantidad</code>.</p>
-          <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
-          <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-2xl shadow p-4 mt-4">
-        <h3 class="font-semibold mb-2">Pegar existencia (opcional)</h3>
-        <textarea id="existenciaInput" rows="5" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Líneas: MOD,COLOR-TALLA | MOD|COLOR|TALLA | CODIGO_BARRA"></textarea>
-        <div class="flex gap-2 mt-2">
-          <button id="btnProcesarExistencia" class="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">Procesar</button>
-          <button id="btnLimpiarExistencia" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Limpiar</button>
-        </div>
-        <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
-      </div>
-
-      <div class="bg-white rounded-2xl shadow p-4 mt-4">
-        <h3 class="font-semibold mb-2">Vista previa existencia agrupada</h3>
-        <div id="existenciaPreview" class="overflow-auto max-h-64 border rounded-xl"></div>
-      </div>
-    </section>
-
-    <!-- Escanear -->
-    <section id="tab-escanear" class="tab-pane hidden">
-      <div class="bg-white rounded-2xl shadow p-4">
-        <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
-        <p class="text-xs text-gray-600 mb-3">HTTPS/localhost. Si no detecta, cambia a Quagga2. Usa Registro manual si no hay código o hay cantidad.</p>
-
-        <div class="grid md:grid-cols-2 gap-4 mb-3">
-          <!-- Izquierda: manual + lector/teclado -->
-          <div>
-            <label class="text-xs text-gray-500">Entrada con lector/teclado</label>
-            <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="Escanea o escribe: 10902400 ó 000-01,ORO-240 ó 000-01|ORO|240" />
-            <div class="flex flex-wrap gap-2 mb-4">
-              <button id="btnUndo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Deshacer</button>
-              <button id="btnResetEscaneo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Reiniciar</button>
-              <button id="btnCargarPruebaEscaneo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Prueba</button>
-            </div>
-
-            <div class="border-t pt-3 mt-2">
-              <h3 class="font-semibold text-sm mb-2">Registrar manual</h3>
-              <div class="grid grid-cols-5 gap-2 items-center">
-                <input id="manualClave" class="col-span-3 rounded-lg border border-gray-200 p-2 text-sm" placeholder="Clave o código (MOD|COLOR|TALLA / 10902400)" />
-                <input id="manualQty" type="number" min="1" value="1" class="col-span-1 rounded-lg border border-gray-200 p-2 text-sm" />
-                <button id="btnManual" class="col-span-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">Registrar</button>
-              </div>
-              <p class="text-xs text-gray-500 mt-1">Acepta <b>MOD|COLOR|TALLA</b>, <b>MOD,COLOR-TALLA</b> o <b>código de barras</b>. Cantidad > 1 duplica el registro.</p>
-            </div>
-          </div>
-
-          <!-- Derecha: cámara -->
-          <div>
-            <label class="text-xs text-gray-500">Cámara</label>
-            <div class="flex flex-wrap items-center gap-2 mb-2">
-              <select id="cameraSelect" class="border rounded p-1 text-xs"></select>
-              <select id="engineSelect" class="border rounded p-1 text-xs">
-                <option value="bd">Barcode Detector (rápido)</option>
-                <option value="quagga">Quagga2 (compatibilidad)</option>
-              </select>
-              <button id="btnSolicitarPermisos" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Permisos</button>
-              <button id="btnCamStart" class="px-3 py-2 text-sm rounded-lg bg-green-600 text-white">Iniciar</button>
-              <button id="btnCamStop" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Detener</button>
-              <button id="btnTogglePause" class="px-3 py-2 text-sm rounded-lg bg-yellow-500 text-white">Pausar escaneo</button>
-              <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
-              <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
-              <button id="btnTorch" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Linterna</button>
-              <button id="btnFullscreen" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Pantalla completa</button>
-              <button id="btnAudio" class="px-3 py-2 text-sm rounded-lg bg-purple-600 text-white">Activar sonidos</button>
-            </div>
-            <div class="text-xs" id="httpsStatus"></div>
-
-            <!-- Área de cámara compacta -->
-            <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
-              <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
-              <canvas id="quaggaOverlay"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid md:grid-cols-2 gap-4">
-          <div>
-            <h3 class="font-semibold mb-2">Últimos escaneos <span id="lastStatus" class="badge bg-gray-100 text-gray-700">—</span></h3>
-            <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
-          </div>
-          <div>
-            <h3 class="font-semibold mb-2">Acumulado por clave</h3>
-            <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
-          </div>
-        </div>
-
-        <div class="mt-3 text-xs text-gray-500 mono" id="diag"></div>
-      </div>
-    </section>
-
-    <!-- Reporte -->
-    <section id="tab-reporte" class="tab-pane hidden">
-      <div class="bg-white rounded-2xl shadow p-4">
-        <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
-        <div class="flex flex-wrap gap-2 mb-3 no-print">
-          <button id="btnGenerarReporte" class="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">Generar</button>
-          <button id="btnExportarCSV" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Exportar CSV</button>
-          <button id="btnRespaldarJSON" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Respaldo JSON</button>
-          <button id="btnImprimir" class="px-3 py-2 text-sm rounded-lg bg-gray-100" onclick="window.print()">Imprimir</button>
-        </div>
-        <div class="bg-gray-50 border rounded-xl p-3 mb-3 no-print">
-          <h3 class="font-semibold mb-2">Filtros</h3>
-          <div class="grid md:grid-cols-4 gap-2">
-            <input id="filtroMOD" placeholder="Filtrar MOD" class="rounded-lg border border-gray-200 p-2 text-sm"/>
-            <input id="filtroCOLOR" placeholder="Filtrar COLOR" class="rounded-lg border border-gray-200 p-2 text-sm"/>
-            <input id="filtroTALLA" placeholder="Filtrar TALLA" class="rounded-lg border border-gray-200 p-2 text-sm"/>
-            <input id="filtroTEMP" placeholder="Filtrar TEMPORADA" class="rounded-lg border border-gray-200 p-2 text-sm"/>
-          </div>
-        </div>
-        <div class="grid md:grid-cols-3 gap-4">
-          <div class="border rounded-xl p-3">
-            <h3 class="font-semibold mb-2">Escaneados</h3>
-            <div id="tablaEscaneados" class="overflow-auto max-h-80"></div>
-          </div>
-          <div class="border rounded-xl p-3">
-            <h3 class="font-semibold mb-2">Sobrantes</h3>
-            <div id="tablaSobrantes" class="overflow-auto max-h-80"></div>
-          </div>
-          <div class="border rounded-xl p-3">
-            <h3 class="font-semibold mb-2">Faltantes</h3>
-            <div id="tablaFaltantes" class="overflow-auto max-h-80"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <footer class="mt-6 text-xs text-gray-500 no-print">
-      Guarda en <code>localStorage</code>. Respaldo JSON disponible.
-    </footer>
+  <!-- Tabs -->
+  <div class="border-b border-gray-200 mb-4 no-print">
+    <nav class="-mb-px flex gap-2" id="tabs">
+      <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
+      <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
+      <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Reporte</button>
+      <button data-tab="historial" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">4) Historial</button>
+    </nav>
   </div>
 
-  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
+  <!-- Importar -->
+  <section id="tab-importar" class="tab-pane block">
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
+        <p class="text-xs text-gray-600 mb-2">Esperado: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code>.</p>
+        <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+        <div id="catalogoStatus" class="text-xs text-gray-600">Sin cargar.</div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Existencia física (CSV)</h2>
+        <p class="text-xs text-gray-600 mb-2">Compatibles: <code>MOD,COLOR,TALLA,Cantidad</code> ó <code>codigo-Color-Talla,Cantidad</code>.</p>
+        <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+        <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4 mt-4">
+      <h3 class="font-semibold mb-2">Pegar existencia (opcional)</h3>
+      <textarea id="existenciaInput" rows="5" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Líneas: MOD,COLOR-TALLA | MOD|COLOR|TALLA | CODIGO_BARRA"></textarea>
+      <div class="flex gap-2 mt-2">
+        <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
+        <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
+      </div>
+      <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow p-4 mt-4">
+      <h3 class="font-semibold mb-2">Vista previa existencia agrupada</h3>
+      <div id="existenciaPreview" class="overflow-auto max-h-64 border rounded-xl"></div>
+    </div>
+  </section>
+
+  <!-- Escanear -->
+  <section id="tab-escanear" class="tab-pane hidden">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
+
+      <!-- Metadatos del conteo -->
+      <div class="grid md:grid-cols-3 gap-2 mb-3">
+        <input id="metaNombre" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Nombre del conteo (p.ej. Cíclico Oferta Dama)" />
+        <input id="metaOperador" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Operador (p.ej. Fulanito XXXX)" />
+        <input id="metaNotas" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Notas (opcional)" />
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar en histórico</button>
+        <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
+        <span id="lastStatus" class="badge bg-gray-100 text-gray-700">—</span>
+      </div>
+
+      <p class="text-xs text-gray-600 mb-3">HTTPS/localhost. Si no detecta, cambia a Quagga2. Usa Registro manual si no hay código o hay cantidad.</p>
+
+      <div class="grid md:grid-cols-2 gap-4 mb-3">
+        <!-- Manual -->
+        <div>
+          <label class="text-xs text-gray-500">Entrada con lector/teclado</label>
+          <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="Escanea o escribe: 10902400 ó 000-01,ORO-240 ó 000-01|ORO|240" />
+          <div class="flex flex-wrap gap-2 mb-4">
+            <button id="btnUndo" class="btn bg-gray-100">Deshacer</button>
+            <button id="btnResetEscaneo" class="btn bg-gray-100">Reiniciar</button>
+            <button id="btnCargarPruebaEscaneo" class="btn bg-gray-100">Prueba</button>
+          </div>
+
+          <div class="border-t pt-3 mt-2">
+            <h3 class="font-semibold text-sm mb-2">Registrar manual</h3>
+            <div class="grid grid-cols-5 gap-2 items-center">
+              <input id="manualClave" class="col-span-3 rounded-lg border border-gray-200 p-2 text-sm" placeholder="Clave o código (MOD|COLOR|TALLA / 10902400)" />
+              <input id="manualQty" type="number" min="1" value="1" class="col-span-1 rounded-lg border border-gray-200 p-2 text-sm" />
+              <button id="btnManual" class="col-span-1 btn bg-blue-600 text-white">Registrar</button>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">Acepta <b>MOD|COLOR|TALLA</b>, <b>MOD,COLOR-TALLA</b> o <b>código de barras</b>. Cantidad > 1 duplica el registro.</p>
+          </div>
+        </div>
+
+        <!-- Cámara -->
+        <div>
+          <label class="text-xs text-gray-500">Cámara</label>
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <select id="cameraSelect" class="border rounded p-1 text-xs"></select>
+            <select id="engineSelect" class="border rounded p-1 text-xs">
+              <option value="bd">Barcode Detector (rápido)</option>
+              <option value="quagga">Quagga2 (compatibilidad)</option>
+            </select>
+            <button id="btnSolicitarPermisos" class="btn bg-indigo-600 text-white">Permisos</button>
+            <button id="btnCamStart" class="btn bg-green-600 text-white">Iniciar</button>
+            <button id="btnCamStop" class="btn bg-gray-100">Detener</button>
+            <button id="btnTogglePause" class="btn bg-yellow-500 text-white">Pausar escaneo</button>
+            <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
+            <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
+            <button id="btnTorch" class="btn bg-gray-100">Linterna</button>
+            <button id="btnFullscreen" class="btn bg-gray-100">Pantalla completa</button>
+            <button id="btnAudio" class="btn bg-purple-600 text-white">Activar sonidos</button>
+          </div>
+          <div class="text-xs" id="httpsStatus"></div>
+
+          <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
+            <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
+            <canvas id="quaggaOverlay"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="font-semibold mb-2">Últimos escaneos</h3>
+          <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Acumulado por clave</h3>
+          <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
+      </div>
+
+      <div class="mt-3 text-xs text-gray-500 mono" id="diag"></div>
+    </div>
+  </section>
+
+  <!-- Reporte -->
+  <section id="tab-reporte" class="tab-pane hidden">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
+      <div class="flex flex-wrap gap-2 mb-3 no-print">
+        <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
+        <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
+        <button id="btnRespaldarJSON" class="btn bg-gray-100">Respaldo JSON</button>
+        <button id="btnImprimir" class="btn bg-gray-100" onclick="window.print()">Imprimir</button>
+      </div>
+      <div class="bg-gray-50 border rounded-xl p-3 mb-3 no-print">
+        <h3 class="font-semibold mb-2">Filtros</h3>
+        <div class="grid md:grid-cols-4 gap-2">
+          <input id="filtroMOD" placeholder="Filtrar MOD" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+          <input id="filtroCOLOR" placeholder="Filtrar COLOR" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+          <input id="filtroTALLA" placeholder="Filtrar TALLA" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+          <input id="filtroTEMP" placeholder="Filtrar TEMPORADA" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="border rounded-xl p-3">
+          <h3 class="font-semibold mb-2">Escaneados</h3>
+          <div id="tablaEscaneados" class="overflow-auto max-h-80"></div>
+        </div>
+        <div class="border rounded-xl p-3">
+          <h3 class="font-semibold mb-2">Sobrantes</h3>
+          <div id="tablaSobrantes" class="overflow-auto max-h-80"></div>
+        </div>
+        <div class="border rounded-xl p-3">
+          <h3 class="font-semibold mb-2">Faltantes</h3>
+          <div id="tablaFaltantes" class="overflow-auto max-h-80"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Historial -->
+  <section id="tab-historial" class="tab-pane hidden">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
+      <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
+      <div class="text-xs text-gray-500 mt-2">Consejo: respalda los conteos con “Respaldo JSON” y/o exporta CSV. Los datos locales se guardan en <code>localStorage</code> de este navegador/dispositivo.</div>
+    </div>
+  </section>
+
+  <footer class="mt-6 text-xs text-gray-500 no-print">
+    Local: <code>conteo_cklass_v01</code> y <code>conteo_cklass_hist</code>. Para multi-dispositivo, activa Firebase (abajo en el código).
+  </footer>
+</div>
+
+<script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 
 <script>
-// ======= Estado / elementos =======
+/* ===================== Estado / elementos ===================== */
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
 const state = { catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
 let SCAN_PAUSED = false;
+const deviceId = (localStorage.getItem('conteo_device_id') || (crypto.randomUUID?.() || String(Math.random()).slice(2)));
+localStorage.setItem('conteo_device_id', deviceId);
 
 const els = {
   tabs: document.querySelectorAll('.tab-btn'),
-  panes: { importar:document.getElementById('tab-importar'), escanear:document.getElementById('tab-escanear'), reporte:document.getElementById('tab-reporte') },
+  panes: { importar:document.getElementById('tab-importar'), escanear:document.getElementById('tab-escanear'), reporte:document.getElementById('tab-reporte'), historial:document.getElementById('tab-historial') },
   fileCatalogo: document.getElementById('fileCatalogo'), catalogoStatus:document.getElementById('catalogoStatus'),
   fileExistenciaCSV: document.getElementById('fileExistenciaCSV'), existenciaCSVStatus:document.getElementById('existenciaCSVStatus'),
   existenciaInput: document.getElementById('existenciaInput'), btnProcesarExistencia:document.getElementById('btnProcesarExistencia'), btnLimpiarExistencia:document.getElementById('btnLimpiarExistencia'),
@@ -218,11 +244,14 @@ const els = {
   quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea'),
   manualClave: document.getElementById('manualClave'), manualQty: document.getElementById('manualQty'), btnManual: document.getElementById('btnManual'),
   lastStatus: document.getElementById('lastStatus'),
-  // botón de audio
-  btnAudio: document.getElementById('btnAudio')
+  btnAudio: document.getElementById('btnAudio'),
+  // meta / historial
+  metaNombre: document.getElementById('metaNombre'), metaOperador: document.getElementById('metaOperador'), metaNotas: document.getElementById('metaNotas'),
+  btnGuardarHistorico: document.getElementById('btnGuardarHistorico'), btnNuevaSesion: document.getElementById('btnNuevaSesion'),
+  histList: document.getElementById('histList')
 };
 
-// ===== Tabs =====
+/* ===================== Tabs ===================== */
 els.tabs.forEach(btn => btn.addEventListener('click', () => {
   els.tabs.forEach(b => b.classList.remove('text-blue-600','border-blue-600'));
   btn.classList.add('text-blue-600','border-blue-600');
@@ -232,7 +261,7 @@ els.tabs.forEach(btn => btn.addEventListener('click', () => {
   });
 }));
 
-// ===== HTTPS check =====
+/* ===================== HTTPS check ===================== */
 function updateHttpsStatus(){
   const isSecure = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
   els.httpsStatus.innerHTML = isSecure
@@ -241,39 +270,29 @@ function updateHttpsStatus(){
 }
 updateHttpsStatus();
 
-// ===== Sonido: WebAudio (desbloqueo + beeps) =====
+/* ===================== WebAudio (beeps) ===================== */
 let audioCtx = null, audioReady = false;
 function initAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
-  audioReady = true;
-  // feedback rápido
-  playTone(900, 60, 'square', 0.06);
+  audioReady = true; playTone(900, 60, 'square', 0.06);
 }
 function playTone(freq=880, ms=90, type='sine', gain=0.08) {
   if (!audioReady || !audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  osc.type = type;
-  osc.frequency.value = freq;
-  g.gain.value = gain;
+  const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+  osc.type = type; osc.frequency.value = freq; g.gain.value = gain;
   osc.connect(g).connect(audioCtx.destination);
-  const now = audioCtx.currentTime;
-  osc.start(now);
-  osc.stop(now + ms/1000);
+  const now = audioCtx.currentTime; osc.start(now); osc.stop(now + ms/1000);
 }
 function playOk(){ if(!els.chkBeep.checked) return; playTone(1200, 90, 'square', 0.08); }
 function playErr(){ playTone(220, 140, 'sawtooth', 0.10); }
 function buzz(pattern=[120]){ if (navigator.vibrate) navigator.vibrate(pattern); }
-
-// botón visible para activar sonidos
 els.btnAudio.addEventListener('click', initAudio);
-// auto-desbloqueo con primer toque/tecla
 const _unlock = ()=>{ initAudio(); document.removeEventListener('click', _unlock); document.removeEventListener('keydown', _unlock); };
 document.addEventListener('click', _unlock, { once:true });
 document.addEventListener('keydown', _unlock, { once:true });
 
-// ===== Utils =====
+/* ===================== Utils ===================== */
 const toKey = (mod, color, talla) => `${(mod||'').trim()}|${(color||'').trim()}|${(talla||'').trim()}`.toUpperCase();
 function parseLine(line){ line=line.trim(); if(!line) return null;
   if(/^\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item) return {type:'BC_NO_ENCONTRADO', raw:line}; return {type:'KEY', key:toKey(item.MOD,item.COLOR,item.TALLA)}; }
@@ -290,19 +309,19 @@ function renderTable(map, headers=['Clave','Cantidad']){
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-webaudio-alert-pause'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-v1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
-function refreshUI(){ document.getElementById('catalogoStatus').textContent=`${state.catalog.size} códigos de barras cargados.`; document.getElementById('existenciaStatus').textContent=`${state.existencia.size} claves agrupadas.`; document.getElementById('existenciaPreview').innerHTML=renderTable(state.existencia); document.getElementById('scanLog').innerHTML=renderLog(state.scans); document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans); }
+function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
 function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
-// ===== Importar =====
+/* ===================== Importar ===================== */
 els.fileCatalogo.addEventListener('change', async (e)=>{
   const text=await e.target.files?.[0]?.text(); if(!text) return;
   const lines=text.split(/\r?\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
   const idx={BC:cols.indexOf('CODIGO_BARRA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), TEMP:cols.indexOf('TEMPORADA')};
   for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue; const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim(); const key=toKey(MOD,COLOR,TALLA); state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]); state.indexByKey.get(key).push(bc); if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); }
-  document.getElementById('catalogoStatus').textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
+  els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
 });
 els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
 function parseExistenciaCSV(text){
@@ -314,38 +333,30 @@ function parseExistenciaCSV(text){
     else if(idx.KEY>=0 && p[idx.KEY]){ const raw=p[idx.KEY].trim(); if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); } else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); } }
     if(!key) continue; acc.set(key,(acc.get(key)||0)+(qty||0)); if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
   }
-  state.existencia=acc; document.getElementById('existenciaCSVStatus').textContent=`${state.existencia.size} claves cargadas.`;
+  state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
 }
 
-// ===== Pegar existencia =====
-document.getElementById('btnProcesarExistencia').addEventListener('click',()=>{
+/* ===================== Pegar existencia ===================== */
+els.btnProcesarExistencia.addEventListener('click',()=>{
   const keys=[]; const notFound=[];
-  document.getElementById('existenciaInput').value.split(/\r?\n/).forEach(line=>{
-    const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key);
-  });
-  state.existencia=group(keys);
-  document.getElementById('existenciaStatus').textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`;
-  document.getElementById('existenciaPreview').innerHTML=renderTable(state.existencia);
-  saveLocal();
+  els.existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
+  state.existencia=group(keys); els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; els.existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
 });
-document.getElementById('btnLimpiarExistencia').addEventListener('click',()=>{
-  document.getElementById('existenciaInput').value=''; state.existencia.clear();
-  document.getElementById('existenciaPreview').innerHTML=''; document.getElementById('existenciaStatus').textContent='0 registros.'; saveLocal();
-});
+els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
-// ===== Escaneo/Registro manual =====
+/* ===================== Escaneo / Manual ===================== */
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){
   const p=parseLine(line);
   if(!p){ setStatusErr('Entrada inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
   if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+p.raw); return; }
   if(p.type==='KEY'){ state.scans.push(p.key); state.groupedScans=group(state.scans); setStatusOk('OK manual'); playOk(); }
-  document.getElementById('scanLog').innerHTML=renderLog(state.scans); document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans); saveLocal();
+  els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal();
 }
 
-document.getElementById('btnManual').addEventListener('click', ()=>{
-  const clave = (document.getElementById('manualClave').value||'').trim();
-  let qty = parseInt((document.getElementById('manualQty').value||'1'),10); if(!qty || qty<1) qty=1;
+els.btnManual.addEventListener('click', ()=>{
+  const clave = (els.manualClave.value||'').trim();
+  let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
   if(!clave){ setStatusErr('Entrada vacía'); playErr(); buzz([70]); return; }
   if(/^\d{6,}$/.test(clave)){
     const item = state.catalog.get(clave);
@@ -364,17 +375,13 @@ document.getElementById('btnManual').addEventListener('click', ()=>{
       setStatusOk(`+${qty} manual`); playOk();
     }
   }
-  document.getElementById('scanLog').innerHTML=renderLog(state.scans);
-  document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans);
+  els.scanLog.innerHTML=renderLog(state.scans);
+  els.scanGrouped.innerHTML=renderTable(state.groupedScans);
   saveLocal();
-  document.getElementById('manualClave').value=''; document.getElementById('manualQty').value='1';
+  els.manualClave.value=''; els.manualQty.value='1';
 });
 
-document.getElementById('btnUndo').addEventListener('click',()=>{ state.scans.pop(); state.groupedScans=group(state.scans); document.getElementById('scanLog').innerHTML=renderLog(state.scans); document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans); saveLocal(); });
-document.getElementById('btnResetEscaneo').addEventListener('click',()=>{ if(!confirm('¿Reiniciar escaneos?')) return; state.scans=[]; state.groupedScans.clear(); document.getElementById('scanLog').innerHTML=''; document.getElementById('scanGrouped').innerHTML=''; saveLocal(); });
-document.getElementById('btnCargarPruebaEscaneo').addEventListener('click',()=>{ ['10902400','000-01,ORO-240','000-01|ORO|250','10909999'].forEach(addScanLine); });
-
-// ===== Antirrebote / anti-duplicados (cámara) =====
+/* ===== Antirrebote / anti-duplicados (cámara) ===== */
 const FRAME_COOLDOWN_MS = 220;
 const SAME_CODE_COOLDOWN_MS = 1800;
 let lastFrameAt = 0;
@@ -390,14 +397,12 @@ function canAccept(code){
   return true;
 }
 
-// ===== Motores cámara =====
+/* ===================== Motores cámara ===================== */
 const supportsBarcode = "BarcodeDetector" in window;
 let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','itf','codabar']}) : null;
-let camStream=null, detectLoop=null;
+let camStream=null, detectLoop=null, quaggaActive=false;
 
 function log(msg){ els.diag.textContent += msg + "\n"; }
-
-// cámaras disponibles
 async function listCameras(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
@@ -421,13 +426,10 @@ els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   }
 });
 
-// Pausar/Reanudar
 els.btnTogglePause.addEventListener('click', ()=>{
   SCAN_PAUSED = !SCAN_PAUSED;
   els.btnTogglePause.textContent = SCAN_PAUSED ? 'Reanudar escaneo' : 'Pausar escaneo';
-  els.btnTogglePause.className = SCAN_PAUSED
-    ? 'px-3 py-2 text-sm rounded-lg bg-blue-500 text-white'
-    : 'px-3 py-2 text-sm rounded-lg bg-yellow-500 text-white';
+  els.btnTogglePause.className = SCAN_PAUSED ? 'btn bg-blue-500 text-white' : 'btn bg-yellow-500 text-white';
   setStatusOk(SCAN_PAUSED ? 'PAUSADO' : 'EN ESCANEO');
 });
 
@@ -435,7 +437,6 @@ els.btnCamStart.addEventListener('click', ()=>{ const engine = els.engineSelect.
 els.btnCamStop.addEventListener('click', stopAll);
 els.btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 
-// Linterna
 els.btnTorch.addEventListener('click', async ()=>{
   try{
     if (!QUIRKS.track) return alert('Cámara no activa');
@@ -445,7 +446,7 @@ els.btnTorch.addEventListener('click', async ()=>{
   }catch(e){ alert('No fue posible activar la linterna'); }
 });
 
-// --- BarcodeDetector (rápido) ---
+// --- BarcodeDetector ---
 async function startBD(){
   stopQuagga();
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
@@ -489,8 +490,7 @@ function runDetectLoop(){
   detectLoop = requestAnimationFrame(step);
 }
 
-// --- Quagga2 (compatibilidad) ---
-let quaggaActive=false;
+// --- Quagga2 ---
 function startQuagga(){
   stopBD();
   const readers = [
@@ -499,21 +499,14 @@ function startQuagga(){
     "codabar_reader","i2of5_reader","2of5_reader"
   ];
   const config = {
-    inputStream: {
-      type: "LiveStream",
-      target: els.quaggaArea,
-      constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
-    },
+    inputStream: { type: "LiveStream", target: els.quaggaArea, constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
     locator: { patchSize: "medium", halfSample: true },
-    decoder: { readers },
-    locate: true,
+    decoder: { readers }, locate: true,
     numOfWorkers: navigator.hardwareConcurrency ? Math.max(1, navigator.hardwareConcurrency - 1) : 2
   };
   window.Quagga?.init(config, err => {
     if (err) { log("Quagga init error: "+err); alert("No se pudo iniciar Quagga."); return; }
-    window.Quagga.start();
-    quaggaActive = true;
-    overlayResize();
+    window.Quagga.start(); quaggaActive = true; overlayResize();
   });
   window.Quagga?.onDetected(onQuaggaDetected);
   window.Quagga?.onProcessed(drawQuaggaBoxes);
@@ -521,47 +514,34 @@ function startQuagga(){
 function stopQuagga(){ try { window.Quagga?.stop(); } catch(_) {} quaggaActive = false; clearOverlay(); }
 function onQuaggaDetected(data){
   if (SCAN_PAUSED) return;
-  const raw = data?.codeResult?.code?.trim();
-  if (!raw) return;
-  if (!canAccept(raw)) return;
-  handleScannedRaw(raw);
+  const raw = data?.codeResult?.code?.trim(); if (!raw) return;
+  if (!canAccept(raw)) return; handleScannedRaw(raw);
 }
 function drawQuaggaBoxes(result){
   const ctx = els.quaggaOverlay.getContext("2d");
-  clearOverlay();
-  if (!result) return;
-  const draw = (path, color, width=2) => {
-    ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
-    for (let i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y);
-    ctx.lineTo(path[0].x, path[0].y);
-    ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke();
-  };
+  clearOverlay(); if (!result) return;
+  const draw = (path, color, width=2) => { ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y); for (let i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y); ctx.lineTo(path[0].x, path[0].y); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke(); };
   if (result.boxes) result.boxes.filter(b=>b !== result.box).forEach(b => draw(b, "rgba(255,255,255,0.4)", 1));
   if (result.box) draw(result.box, "rgba(0,255,0,0.8)", 3);
 }
-function overlayResize(){
-  const rect = els.quaggaArea.getBoundingClientRect();
-  els.quaggaOverlay.width = rect.width;
-  els.quaggaOverlay.height = rect.height;
-}
+function overlayResize(){ const rect = els.quaggaArea.getBoundingClientRect(); els.quaggaOverlay.width = rect.width; els.quaggaOverlay.height = rect.height; }
 function clearOverlay(){ const ctx = els.quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height); }
 window.addEventListener("resize", overlayResize);
 
-// --- Stop all ---
+// Stop all
 function stopAll(){ stopBD(); stopQuagga(); }
 
-// ===== Registro común (con ALERTA BLOQUEANTE en inválidos) =====
+/* ===== Registro escaneos (con ALERTA si no existe) ===== */
 function handleScannedRaw(raw){
   const item = state.catalog.get(raw);
   if(item){
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
     if (els.chkAuto.checked) state.scans.push(key);
     state.groupedScans = group(state.scans);
-    document.getElementById('scanLog').innerHTML = renderLog(state.scans);
-    document.getElementById('scanGrouped').innerHTML = renderTable(state.groupedScans);
+    els.scanLog.innerHTML = renderLog(state.scans);
+    els.scanGrouped.innerHTML = renderTable(state.groupedScans);
     saveLocal();
-    setStatusOk('OK: ' + raw);
-    playOk();
+    setStatusOk('OK: ' + raw); playOk();
   }else{
     setStatusErr('NO EN CATÁLOGO: ' + raw);
     playErr(); buzz([80,40,80]);
@@ -569,7 +549,7 @@ function handleScannedRaw(raw){
   }
 }
 
-// ===== Reporte / filtros =====
+/* ===================== Reporte / filtros ===================== */
 const filtros = { MOD: els.filtroMOD, COLOR: els.filtroCOLOR, TALLA: els.filtroTALLA, TEMP: els.filtroTEMP };
 function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TEMP=(state.keyMeta.get(key)?.TEMPORADA||'').toUpperCase();
   if(filtros.MOD.value && !MOD.toUpperCase().includes(filtros.MOD.value.toUpperCase())) return false;
@@ -577,15 +557,191 @@ function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TE
   if(filtros.TALLA.value && !TALLA.toUpperCase().includes(filtros.TALLA.value.toUpperCase())) return false;
   if(filtros.TEMP.value && !TEMP.includes(filtros.TEMP.value.toUpperCase())) return false; return true; }
 Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateReport(true)));
-function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } document.getElementById('tablaEscaneados').innerHTML=renderTable(escT,['Clave','Escaneado']); document.getElementById('tablaSobrantes').innerHTML=renderTable(sobr,['Clave','Sobrante']); document.getElementById('tablaFaltantes').innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
-document.getElementById('btnGenerarReporte').addEventListener('click',()=>generateReport());
-document.getElementById('btnExportarCSV').addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-document.getElementById('btnRespaldarJSON').addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-webaudio-alert-pause'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+function generateReport(skipScroll){
+  const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map();
+  const keys=new Set([...esc.keys(),...exi.keys()]);
+  for(const k of keys){
+    if(!keyPassesFilters(k)) continue;
+    const e=esc.get(k)||0, x=exi.get(k)||0;
+    if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e);
+  }
+  els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']);
+  els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']);
+  els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']);
+  if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'});
+  return {escT,sobr,falt};
+}
+els.btnGenerarReporte.addEventListener('click',()=>generateReport());
+els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
-// ===== Init =====
+/* ===================== HISTÓRICO local ===================== */
+function loadHist(){ try{ return JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); }catch(_){ return []; } }
+function saveHist(list){ localStorage.setItem('conteo_cklass_hist', JSON.stringify(list)); }
+function makeSnapshot(){
+  const nombre = els.metaNombre.value?.trim() || '(sin nombre)';
+  const operador = els.metaOperador.value?.trim() || '(sin operador)';
+  const notas = els.metaNotas.value?.trim() || '';
+  const when = new Date();
+  return {
+    id: crypto.randomUUID?.() || String(when.getTime())+'_'+Math.random().toString(36).slice(2),
+    nombre, operador, notas,
+    fechaIso: when.toISOString(),
+    fechaLocal: when.toLocaleString(),
+    deviceId,
+    existencia: [...state.existencia],
+    scans: state.scans.slice(),
+    groupedScans: [...state.groupedScans],
+    totals: { escaneados: state.scans.length, claves: state.groupedScans.size, existenciaClaves: state.existencia.size }
+  };
+}
+function renderHist(){
+  const list = loadHist();
+  if(!list.length){ els.histList.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
+  const rows = list.slice().reverse().map(h=>`
+    <tr>
+      <td class="px-2 py-2 border-b">${h.fechaLocal}</td>
+      <td class="px-2 py-2 border-b font-medium">${h.nombre}</td>
+      <td class="px-2 py-2 border-b">${h.operador}</td>
+      <td class="px-2 py-2 border-b text-xs">${h.notas||''}</td>
+      <td class="px-2 py-2 border-b text-right">${h.totals?.escaneados||0}</td>
+      <td class="px-2 py-2 border-b text-right">${h.totals?.claves||0}</td>
+      <td class="px-2 py-2 border-b">
+        <div class="flex flex-wrap gap-2">
+          <button class="btn bg-blue-600 text-white" onclick="reabrirHist('${h.id}')">Reabrir</button>
+          <button class="btn bg-gray-100" onclick="exportHistCSV('${h.id}')">CSV</button>
+          <button class="btn bg-gray-100" onclick="exportHistJSON('${h.id}')">JSON</button>
+          <button class="btn bg-red-600 text-white" onclick="borrarHist('${h.id}')">Eliminar</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  els.histList.innerHTML = `
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr>
+          <th class="text-left px-2 py-1 border-b">Fecha</th>
+          <th class="text-left px-2 py-1 border-b">Nombre</th>
+          <th class="text-left px-2 py-1 border-b">Operador</th>
+          <th class="text-left px-2 py-1 border-b">Notas</th>
+          <th class="text-right px-2 py-1 border-b">Escaneos</th>
+          <th class="text-right px-2 py-1 border-b">Claves</th>
+          <th class="text-left px-2 py-1 border-b">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+window.reabrirHist = function(id){
+  const list = loadHist();
+  const h = list.find(x=>x.id===id); if(!h) return alert('No encontrado');
+  state.existencia = new Map(h.existencia||[]);
+  state.scans = h.scans||[];
+  state.groupedScans = new Map(h.groupedScans||[]);
+  refreshUI();
+  setStatusOk('Cargado desde histórico');
+  // Ir a pestaña escanear
+  document.querySelector('[data-tab="escanear"]').click();
+};
+window.exportHistJSON = function(id){
+  const list=loadHist(); const h=list.find(x=>x.id===id); if(!h) return;
+  const blob=new Blob([JSON.stringify(h,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`conteo_${(h.nombre||'sin_nombre')}.json`; a.click(); URL.revokeObjectURL(url);
+};
+window.exportHistCSV = function(id){
+  const list=loadHist(); const h=list.find(x=>x.id===id); if(!h) return;
+  const maps = [
+    ['ESCANEADOS', new Map(h.groupedScans||[])],
+    ['EXISTENCIA', new Map(h.existencia||[])]
+  ];
+  exportCSV(maps);
+};
+window.borrarHist = function(id){
+  const list = loadHist(); const i=list.findIndex(x=>x.id===id); if(i<0) return;
+  if(!confirm('¿Eliminar conteo del historial?')) return;
+  list.splice(i,1); saveHist(list); renderHist();
+};
+
+// Guardar en histórico (cierra conteo actual)
+els.btnGuardarHistorico.addEventListener('click', ()=>{
+  if (!state.scans.length && !state.existencia.size) {
+    if(!confirm('No hay datos en este conteo. ¿Guardar de todos modos?')) return;
+  }
+  const snap = makeSnapshot();
+  const list = loadHist(); list.push(snap); saveHist(list);
+  renderHist();
+  setStatusOk('Guardado en histórico');
+  alert('Conteo guardado en histórico.\n\nPuedes verlo en la pestaña 4) Historial.');
+});
+
+// Nueva sesión (limpia scans/existencia)
+els.btnNuevaSesion.addEventListener('click', ()=>{
+  if(!confirm('Esto limpia escaneos y existencia (no el catálogo). ¿Continuar?')) return;
+  state.scans = [];
+  state.groupedScans.clear();
+  state.existencia.clear();
+  els.existenciaPreview.innerHTML='';
+  els.existenciaStatus.textContent='0 registros.';
+  els.scanLog.innerHTML='';
+  els.scanGrouped.innerHTML='';
+  saveLocal();
+  setStatusOk('Sesión nueva lista');
+});
+
+/* ===================== Init ===================== */
 function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
-function init(){ loadLocal(); refreshUI(); listCameras(); initTabsFromHash(); window.addEventListener('hashchange', initTabsFromHash); }
+function init(){ loadLocal(); refreshUI(); listCameras(); initTabsFromHash(); window.addEventListener('hashchange', initTabsFromHash); renderHist(); }
 init();
+
+/* ===================== OPCIONAL: Firebase para multi-dispositivo ===================== */
+/*
+  Para acumular escaneos desde varios celulares:
+  1) Crea proyecto en Firebase → Habilita Firestore.
+  2) Copia tu config en firebaseConfig.
+  3) Descomenta los imports y este bloque, y marca SYNC_ON = true.
+  4) Usa un "código de sesión" (p.ej. FECHA-TIENDA) en metaNombre; todos ingresan el mismo.
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getFirestore, doc, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+    const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let SYNC_ON = true;
+
+    async function syncAddScan(key){
+      if(!SYNC_ON) return;
+      const session = (els.metaNombre.value?.trim() || 'sesion_sin_nombre').toUpperCase();
+      const ref = collection(db, 'conteos', session, 'eventos');
+      await addDoc(ref, { t: serverTimestamp(), deviceId, key });
+    }
+
+    // Escucha remota y acumula
+    function listenSession(){
+      const session = (els.metaNombre.value?.trim() || 'sesion_sin_nombre').toUpperCase();
+      const ref = collection(db, 'conteos', session, 'eventos');
+      const q = query(ref, orderBy('t'));
+      onSnapshot(q, snap=>{
+        let changed = false;
+        snap.docChanges().forEach(ch=>{
+          if(ch.type === 'added'){
+            const { key } = ch.doc.data();
+            if(key){ state.scans.push(key); changed = true; }
+          }
+        });
+        if(changed){ state.groupedScans = group(state.scans); refreshUI(); saveLocal(); }
+      });
+    }
+
+    // Llama listenSession() cuando cambie metaNombre o al iniciar
+    els.metaNombre.addEventListener('change', listenSession);
+
+    // Integra en tu flujo: cuando agregues un scan válido:
+    //  state.scans.push(key); await syncAddScan(key);
+  </script>
+*/
 </script>
 </body>
 </html>
