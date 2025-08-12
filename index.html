@@ -3,12 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS (PWA) – Lector Dual</title>
+  <title>Conteo CKLASS (PWA) – Lector Dual + Antirrebote</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
   <script>
-    // Registrar Service Worker (PWA)
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
@@ -22,7 +21,6 @@
     video { object-fit: cover; }
     @media print { .no-print { display:none!important; } }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    /* Overlay para Quagga */
     #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
     #quaggaArea { position: relative; background: #000; }
   </style>
@@ -34,7 +32,6 @@
       <p class="text-sm text-gray-600">Importar (catálogo + existencia) → Escanear (cámara/lector) → Reporte. Compatible móvil (HTTPS/localhost).</p>
     </header>
 
-    <!-- Tabs -->
     <div class="border-b border-gray-200 mb-4 no-print">
       <nav class="-mb-px flex gap-2" id="tabs">
         <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
@@ -81,7 +78,7 @@
     <section id="tab-escanear" class="tab-pane hidden">
       <div class="bg-white rounded-2xl shadow p-4">
         <h2 class="font-semibold mb-2">Escaneo con cámara</h2>
-        <p class="text-xs text-gray-600 mb-3">Usa Chrome/Edge en <b>HTTPS</b> o <b>localhost</b>. Si no detecta, cambia de motor a Quagga2.</p>
+        <p class="text-xs text-gray-600 mb-3">Usa Chrome/Edge en <b>HTTPS</b> o <b>localhost</b>. Si no detecta, cambia a Quagga2.</p>
 
         <div class="grid md:grid-cols-2 gap-4 mb-3">
           <div>
@@ -112,7 +109,6 @@
             </div>
             <div class="text-xs" id="httpsStatus"></div>
 
-            <!-- Contenedor dual: video (BarcodeDetector) o Quagga target -->
             <div id="quaggaArea" class="video-wrap mobile-fullscreen rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
               <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
               <canvas id="quaggaOverlay"></canvas>
@@ -180,7 +176,6 @@
     <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
   </audio>
 
-  <!-- Quagga2 para compatibilidad -->
   <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 
 <script>
@@ -208,7 +203,7 @@ const els = {
   quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea')
 };
 
-// ======= Tabs =======
+// ===== Tabs =====
 els.tabs.forEach(btn => btn.addEventListener('click', () => {
   els.tabs.forEach(b => b.classList.remove('text-blue-600','border-blue-600'));
   btn.classList.add('text-blue-600','border-blue-600');
@@ -218,7 +213,7 @@ els.tabs.forEach(btn => btn.addEventListener('click', () => {
   });
 }));
 
-// ======= HTTPS check =======
+// ===== HTTPS check =====
 function updateHttpsStatus(){
   const isSecure = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
   els.httpsStatus.innerHTML = isSecure
@@ -227,7 +222,7 @@ function updateHttpsStatus(){
 }
 updateHttpsStatus();
 
-// ======= Utils =======
+// ===== Utils =====
 const toKey = (mod, color, talla) => `${(mod||'').trim()}|${(color||'').trim()}|${(talla||'').trim()}`.toUpperCase();
 function parseLine(line){ line=line.trim(); if(!line) return null;
   if(/^\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item) return {type:'BC_NO_ENCONTRADO', raw:line}; return {type:'KEY', key:toKey(item.MOD,item.COLOR,item.TALLA)}; }
@@ -238,17 +233,17 @@ function parseLine(line){ line=line.trim(); if(!line) return null;
 }
 function renderTable(map, headers=['Clave','Cantidad']){
   const rows=[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-  return ['<table class="min-w-full text-sm">', `<thead><tr>${headers.map(h=>`<th class=\"text-left px-2 py-1 border-b\">${h}</th>`).join('')}</tr></thead>`, '<tbody>',
+  return ['<table class="min-w-full text-sm">', `<thead><tr>${headers.map(h=>`<th class="text-left px-2 py-1 border-b">${h}</th>`).join('')}</tr></thead>`, '<tbody>',
     ...rows.map(([k,v])=>`<tr><td class="px-2 py-1 border-b">${k}</td><td class="px-2 py-1 border-b">${v}</td></tr>`), '</tbody></table>'].join('');
 }
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-antirrebote'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
 function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
 
-// ======= Importar catálogo =======
+// ===== Importar =====
 els.fileCatalogo.addEventListener('change', async (e)=>{
   const text=await e.target.files?.[0]?.text(); if(!text) return;
   const lines=text.split(/\r?\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
@@ -256,39 +251,53 @@ els.fileCatalogo.addEventListener('change', async (e)=>{
   for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue; const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim(); const key=toKey(MOD,COLOR,TALLA); state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]); state.indexByKey.get(key).push(bc); if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); }
   els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
 });
-
-// ======= Importar existencia CSV =======
 els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
 function parseExistenciaCSV(text){
   const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return; const cols=lines.shift().split(',').map(x=>x.trim().toUpperCase());
   const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), CANT:cols.indexOf('CANTIDAD')};
   const acc=new Map();
   for(const line of lines){ const p=line.split(','); let key=''; let qty=1; if(idx.CANT>=0) qty=parseInt((p[idx.CANT]||'1').trim(),10)||0;
-    if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA]||''); }
+    if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA||'']); }
     else if(idx.KEY>=0 && p[idx.KEY]){ const raw=p[idx.KEY].trim(); if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); } else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); } }
     if(!key) continue; acc.set(key,(acc.get(key)||0)+(qty||0)); if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
   }
   state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
 }
 
-// ======= Pegar existencia =======
+// ===== Pegar existencia =====
 els.btnProcesarExistencia.addEventListener('click',()=>{
   const keys=[]; const notFound=[]; els.existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
   state.existencia=group(keys); els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; els.existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
 });
 els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
-// ======= Escaneo manual =======
+// ===== Escaneo manual =====
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') state.scans.push('[NO ENCONTRADO] '+p.raw); else if(p.type==='KEY') state.scans.push(p.key); state.groupedScans=group(state.scans.filter(x=>!x.startsWith('[NO ENCONTRADO]'))); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal(); }
 els.btnUndo.addEventListener('click',()=>{ state.scans.pop(); state.groupedScans=group(state.scans.filter(x=>!x.startsWith('[NO ENCONTRADO]'))); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal(); });
 els.btnResetEscaneo.addEventListener('click',()=>{ if(!confirm('¿Reiniciar escaneos?')) return; state.scans=[]; state.groupedScans.clear(); els.scanLog.innerHTML=''; els.scanGrouped.innerHTML=''; saveLocal(); });
 els.btnCargarPruebaEscaneo.addEventListener('click',()=>{ ['10902400','000-01,ORO-240','000-01|ORO|250','10909999'].forEach(addScanLine); });
 
-// ======= Motores de cámara =======
+// ===== Antirrebote / anti-duplicados =====
+const FRAME_COOLDOWN_MS = 220;      // mínimo entre frames aceptados
+const SAME_CODE_COOLDOWN_MS = 1800; // ventana para NO aceptar el mismo código
+let lastFrameAt = 0;
+const seenRecently = new Map();     // code -> timestamp
+function canAccept(code){
+  const now = Date.now();
+  if (now - lastFrameAt < FRAME_COOLDOWN_MS) return false; // frena ráfagas
+  lastFrameAt = now;
+  const last = seenRecently.get(code) || 0;
+  if (now - last < SAME_CODE_COOLDOWN_MS) return false;    // no repetir mismo code
+  seenRecently.set(code, now);
+  for (const [c,t] of seenRecently) if (now - t > SAME_CODE_COOLDOWN_MS*3) seenRecently.delete(c);
+  return true;
+}
+
+// ===== Motores =====
 const supportsBarcode = "BarcodeDetector" in window;
 let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','itf','codabar']}) : null;
-let camStream=null, detectLoop=null, lastCode='', lastWhen=0, quaggaActive=false;
+let camStream=null, detectLoop=null, quaggaActive=false;
 
 function log(msg){ els.diag.textContent += msg + "\n"; }
 
@@ -303,7 +312,6 @@ async function listCameras(){
 }
 navigator.mediaDevices?.enumerateDevices && listCameras();
 
-// Solicitar permisos explícitos
 els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   updateHttpsStatus();
   try{
@@ -317,16 +325,13 @@ els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   }
 });
 
-// Iniciar cámara según motor
 els.btnCamStart.addEventListener('click', async ()=>{
   const engine = els.engineSelect.value;
-  if (engine === 'bd') startBD();
-  else startQuagga();
+  if (engine === 'bd') startBD(); else startQuagga();
 });
 els.btnCamStop.addEventListener('click', stopAll);
 els.btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 
-// Torch (solo BD con getUserMedia directo)
 els.btnTorch.addEventListener('click', async ()=>{
   try{
     if (!QUIRKS.track) return alert('Cámara no activa');
@@ -336,7 +341,7 @@ els.btnTorch.addEventListener('click', async ()=>{
   }catch(e){ alert('No fue posible activar la linterna'); }
 });
 
-// ----- BarcodeDetector -----
+// --- BarcodeDetector ---
 async function startBD(){
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   stopQuagga();
@@ -351,7 +356,7 @@ async function startBD(){
     runDetectLoop();
   }catch(e){
     log('startBD error: '+(e && (e.name+': '+e.message)));
-    alert('No se pudo iniciar BD. Prueba con motor Quagga2.');
+    alert('No se pudo iniciar BD. Prueba motor Quagga2.');
   }
 }
 function stopBD(){
@@ -363,20 +368,18 @@ function stopBD(){
 function runDetectLoop(){
   const video = els.videoCam;
   const auto = els.chkAuto.checked;
-  const beep = els.chkBeep.checked;
-  const doBeep = () => { if(!beep) return; try{ document.getElementById('beep').currentTime=0; document.getElementById('beep').play(); }catch(_){} };
+  const beepEl = document.getElementById('beep');
+  const doBeep = () => { if(!els.chkBeep.checked) return; try{ beepEl.currentTime=0; beepEl.play(); }catch(_){} };
   const step = async () => {
     if(!camStream) return;
     try{
       const ts=performance.now();
-      if(!runDetectLoop._last || ts-runDetectLoop._last > 180){
+      if(!runDetectLoop._last || ts-runDetectLoop._last > 160){
         runDetectLoop._last = ts;
         const codes = await detector.detect(video);
         if (codes && codes.length) {
-          const code = codes[0].rawValue;
-          const now = Date.now();
-          if(code && (code !== lastCode || (now - lastWhen) > 700)){
-            lastCode = code; lastWhen = now;
+          const code = codes[0].rawValue?.trim();
+          if (code && canAccept(code)) {
             doBeep();
             if (auto) addScanLine(code);
           }
@@ -388,7 +391,7 @@ function runDetectLoop(){
   detectLoop = requestAnimationFrame(step);
 }
 
-// ----- Quagga2 -----
+// --- Quagga2 ---
 function startQuagga(){
   stopBD();
   const readers = [
@@ -426,15 +429,11 @@ function stopQuagga(){
   clearOverlay();
 }
 function onQuaggaDetected(data){
-  const auto = els.chkAuto.checked;
-  const beep = els.chkBeep.checked;
-  const code = data?.codeResult?.code;
-  const now = Date.now();
+  const code = data?.codeResult?.code?.trim();
   if (!code) return;
-  if (code === lastCode && (now - lastWhen) < 700) return;
-  lastCode = code; lastWhen = now;
-  if (beep) { try{ document.getElementById('beep').currentTime=0; document.getElementById('beep').play(); }catch(_){} }
-  if (auto) addScanLine(code);
+  if (!canAccept(code)) return;
+  if (els.chkBeep.checked) { try{ const b=document.getElementById('beep'); b.currentTime=0; b.play(); }catch(_){} }
+  if (els.chkAuto.checked) addScanLine(code);
 }
 function drawQuaggaBoxes(result){
   const ctx = els.quaggaOverlay.getContext("2d");
@@ -461,13 +460,10 @@ function clearOverlay(){
 }
 window.addEventListener("resize", overlayResize);
 
-// ----- Stop all -----
-function stopAll(){
-  stopBD();
-  stopQuagga();
-}
+// --- Stop all ---
+function stopAll(){ stopBD(); stopQuagga(); }
 
-// ======= Reporte y filtros =======
+// ===== Reporte / filtros =====
 const filtros = { MOD: els.filtroMOD, COLOR: els.filtroCOLOR, TALLA: els.filtroTALLA, TEMP: els.filtroTEMP };
 function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TEMP=(state.keyMeta.get(key)?.TEMPORADA||'').toUpperCase();
   if(filtros.MOD.value && !MOD.toUpperCase().includes(filtros.MOD.value.toUpperCase())) return false;
@@ -478,9 +474,9 @@ Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateRep
 function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']); els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']); els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
 els.btnGenerarReporte.addEventListener('click',()=>generateReport());
 els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-antirrebote'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
-// ======= Init =======
+// ===== Init =====
 function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
 function init(){ loadLocal(); refreshUI(); listCameras(); initTabsFromHash(); window.addEventListener('hashchange', initTabsFromHash); }
 init();
