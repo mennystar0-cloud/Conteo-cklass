@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS (PWA) – Lector Dual + Antirrebote</title>
+  <title>Conteo CKLASS (PWA) – Lector Dual + Antirrebote + Manual + Sonidos</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
@@ -17,19 +17,20 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root { --safe-bottom: env(safe-area-inset-bottom); --safe-top: env(safe-area-inset-top); }
-    @media (max-width: 640px) { .mobile-fullscreen { height: calc(100dvh - 140px - var(--safe-bottom)); } .video-wrap { height: 100%; } }
+    @media (max-width: 640px) { .mobile-fullscreen { height: calc(100dvh - 160px - var(--safe-bottom)); } .video-wrap { height: 100%; } }
     video { object-fit: cover; }
     @media print { .no-print { display:none!important; } }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
     #quaggaArea { position: relative; background: #000; }
+    .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
   <div class="max-w-7xl mx-auto p-4">
     <header class="mb-4 no-print">
-      <h1 class="text-2xl font-bold">Módulo de Conteo – PWA (Lector Dual)</h1>
-      <p class="text-sm text-gray-600">Importar (catálogo + existencia) → Escanear (cámara/lector) → Reporte. Compatible móvil (HTTPS/localhost).</p>
+      <h1 class="text-2xl font-bold">Módulo de Conteo – PWA (Dual + Manual + Sonidos)</h1>
+      <p class="text-sm text-gray-600">Importar → Escanear (cámara/lector) o Registrar manual → Reporte. HTTPS/localhost para cámara.</p>
     </header>
 
     <div class="border-b border-gray-200 mb-4 no-print">
@@ -77,20 +78,32 @@
     <!-- Escanear -->
     <section id="tab-escanear" class="tab-pane hidden">
       <div class="bg-white rounded-2xl shadow p-4">
-        <h2 class="font-semibold mb-2">Escaneo con cámara</h2>
-        <p class="text-xs text-gray-600 mb-3">Usa Chrome/Edge en <b>HTTPS</b> o <b>localhost</b>. Si no detecta, cambia a Quagga2.</p>
+        <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
+        <p class="text-xs text-gray-600 mb-3">HTTPS/localhost. Si no detecta, cambia a Quagga2. Usa Registro manual si no hay código o hay cantidad.</p>
 
         <div class="grid md:grid-cols-2 gap-4 mb-3">
+          <!-- Columna izquierda: manual + lector/teclado -->
           <div>
-            <label class="text-xs text-gray-500">Entrada manual / lector</label>
-            <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="10902400 ó 000-01,ORO-240 ó 000-01|ORO|240" />
+            <label class="text-xs text-gray-500">Entrada con lector/teclado</label>
+            <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="Escanea o escribe: 10902400 ó 000-01,ORO-240 ó 000-01|ORO|240" />
             <div class="flex flex-wrap gap-2 mb-4">
               <button id="btnUndo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Deshacer</button>
               <button id="btnResetEscaneo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Reiniciar</button>
               <button id="btnCargarPruebaEscaneo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Prueba</button>
             </div>
+
+            <div class="border-t pt-3 mt-2">
+              <h3 class="font-semibold text-sm mb-2">Registrar manual</h3>
+              <div class="grid grid-cols-5 gap-2 items-center">
+                <input id="manualClave" class="col-span-3 rounded-lg border border-gray-200 p-2 text-sm" placeholder="Clave o código (MOD|COLOR|TALLA / 10902400)" />
+                <input id="manualQty" type="number" min="1" value="1" class="col-span-1 rounded-lg border border-gray-200 p-2 text-sm" />
+                <button id="btnManual" class="col-span-1 px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">Registrar</button>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">Acepta <b>MOD|COLOR|TALLA</b>, <b>MOD,COLOR-TALLA</b> o <b>código de barras</b>. Cantidad > 1 duplica el registro.</p>
+            </div>
           </div>
 
+          <!-- Columna derecha: cámara -->
           <div>
             <label class="text-xs text-gray-500">Cámara</label>
             <div class="flex flex-wrap items-center gap-2 mb-2">
@@ -99,7 +112,7 @@
                 <option value="bd">Barcode Detector (rápido)</option>
                 <option value="quagga">Quagga2 (compatibilidad)</option>
               </select>
-              <button id="btnSolicitarPermisos" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Solicitar permisos</button>
+              <button id="btnSolicitarPermisos" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Permisos</button>
               <button id="btnCamStart" class="px-3 py-2 text-sm rounded-lg bg-green-600 text-white">Iniciar</button>
               <button id="btnCamStop" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Detener</button>
               <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
@@ -118,7 +131,7 @@
 
         <div class="grid md:grid-cols-2 gap-4">
           <div>
-            <h3 class="font-semibold mb-2">Últimos escaneos</h3>
+            <h3 class="font-semibold mb-2">Últimos escaneos <span id="lastStatus" class="badge bg-gray-100 text-gray-700">—</span></h3>
             <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
           </div>
           <div>
@@ -172,7 +185,13 @@
     </footer>
   </div>
 
-  <audio id="beep" preload="auto">
+  <!-- Sonidos -->
+  <audio id="sndOk" preload="auto">
+    <!-- beep corto -->
+    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
+  </audio>
+  <audio id="sndErr" preload="auto">
+    <!-- tono grave corto (otro WAV simple) -->
     <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
   </audio>
 
@@ -189,8 +208,8 @@ const els = {
   fileExistenciaCSV: document.getElementById('fileExistenciaCSV'), existenciaCSVStatus:document.getElementById('existenciaCSVStatus'),
   existenciaInput: document.getElementById('existenciaInput'), btnProcesarExistencia:document.getElementById('btnProcesarExistencia'), btnLimpiarExistencia:document.getElementById('btnLimpiarExistencia'),
   existenciaStatus: document.getElementById('existenciaStatus'), existenciaPreview:document.getElementById('existenciaPreview'),
-  scanInput: document.getElementById('scanInput'), scanLog:document.getElementById('scanLog'), scanGrouped:document.getElementById('scanGrouped'),
-  btnUndo: document.getElementById('btnUndo'), btnResetEscaneo:document.getElementById('btnResetEscaneo'), btnCargarPruebaEscaneo:document.getElementById('btnCargarPruebaEscaneo'),
+  scanInput: document.getElementById('scanInput'), scanLog: document.getElementById('scanLog'), scanGrouped: document.getElementById('scanGrouped'),
+  btnUndo: document.getElementById('btnUndo'), btnResetEscaneo: document.getElementById('btnResetEscaneo'), btnCargarPruebaEscaneo: document.getElementById('btnCargarPruebaEscaneo'),
   cameraSelect: document.getElementById('cameraSelect'), engineSelect: document.getElementById('engineSelect'),
   btnSolicitarPermisos:document.getElementById('btnSolicitarPermisos'),
   btnCamStart: document.getElementById('btnCamStart'), btnCamStop:document.getElementById('btnCamStop'), btnFullscreen:document.getElementById('btnFullscreen'),
@@ -200,7 +219,11 @@ const els = {
   tablaEscaneados: document.getElementById('tablaEscaneados'), tablaSobrantes:document.getElementById('tablaSobrantes'), tablaFaltantes:document.getElementById('tablaFaltantes'),
   filtroMOD: document.getElementById('filtroMOD'), filtroCOLOR: document.getElementById('filtroCOLOR'), filtroTALLA: document.getElementById('filtroTALLA'), filtroTEMP: document.getElementById('filtroTEMP'),
   chkAuto: document.getElementById('chkAuto'), chkBeep: document.getElementById('chkBeep'),
-  quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea')
+  quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea'),
+  // Manual
+  manualClave: document.getElementById('manualClave'), manualQty: document.getElementById('manualQty'), btnManual: document.getElementById('btnManual'),
+  // Sonidos y estado
+  sndOk: document.getElementById('sndOk'), sndErr: document.getElementById('sndErr'), lastStatus: document.getElementById('lastStatus')
 };
 
 // ===== Tabs =====
@@ -239,9 +262,13 @@ function renderTable(map, headers=['Clave','Cantidad']){
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-antirrebote'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
 function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
+
+// Badge estado
+function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
+function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
 // ===== Importar =====
 els.fileCatalogo.addEventListener('change', async (e)=>{
@@ -271,24 +298,53 @@ els.btnProcesarExistencia.addEventListener('click',()=>{
 });
 els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
-// ===== Escaneo manual =====
+// ===== Escaneo manual (Enter) =====
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
-function addScanLine(line){ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') state.scans.push('[NO ENCONTRADO] '+p.raw); else if(p.type==='KEY') state.scans.push(p.key); state.groupedScans=group(state.scans.filter(x=>!x.startsWith('[NO ENCONTRADO]'))); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal(); }
-els.btnUndo.addEventListener('click',()=>{ state.scans.pop(); state.groupedScans=group(state.scans.filter(x=>!x.startsWith('[NO ENCONTRADO]'))); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal(); });
-els.btnResetEscaneo.addEventListener('click',()=>{ if(!confirm('¿Reiniciar escaneos?')) return; state.scans=[]; state.groupedScans.clear(); els.scanLog.innerHTML=''; els.scanGrouped.innerHTML=''; saveLocal(); });
-els.btnCargarPruebaEscaneo.addEventListener('click',()=>{ ['10902400','000-01,ORO-240','000-01|ORO|250','10909999'].forEach(addScanLine); });
 
-// ===== Antirrebote / anti-duplicados =====
-const FRAME_COOLDOWN_MS = 220;      // mínimo entre frames aceptados
-const SAME_CODE_COOLDOWN_MS = 1800; // ventana para NO aceptar el mismo código
+// ===== Registrar manual (botón) =====
+els.btnManual.addEventListener('click', ()=>{
+  const clave = (els.manualClave.value||'').trim();
+  let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
+  if(!clave){ setStatusErr('Entrada vacía'); try{els.sndErr.play();}catch(_){} return; }
+  // Acepta clave directa o código de barras
+  if(/^\d{6,}$/.test(clave)){
+    // Código de barras → debe existir en catálogo
+    const item = state.catalog.get(clave);
+    if(!item){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} return; }
+    const key = toKey(item.MOD,item.COLOR,item.TALLA);
+    for(let i=0;i<qty;i++) state.scans.push(key);
+    state.groupedScans=group(state.scans);
+    setStatusOk(`+${qty} por BC`);
+    if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
+  }else{
+    // Clave tipo MOD|COLOR|TALLA o MOD,COLOR-TALLA
+    let parsed = parseLine(clave);
+    if(!parsed){ setStatusErr('Clave inválida'); try{els.sndErr.play();}catch(_){} return; }
+    if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} return; }
+    if(parsed.type==='KEY'){
+      for(let i=0;i<qty;i++) state.scans.push(parsed.key);
+      state.groupedScans=group(state.scans);
+      setStatusOk(`+${qty} manual`);
+      if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
+    }
+  }
+  els.scanLog.innerHTML=renderLog(state.scans);
+  els.scanGrouped.innerHTML=renderTable(state.groupedScans);
+  saveLocal();
+  els.manualClave.value=''; els.manualQty.value='1';
+});
+
+// ===== Antirrebote / anti-duplicados (para cámara) =====
+const FRAME_COOLDOWN_MS = 220;
+const SAME_CODE_COOLDOWN_MS = 1800;
 let lastFrameAt = 0;
-const seenRecently = new Map();     // code -> timestamp
+const seenRecently = new Map();
 function canAccept(code){
   const now = Date.now();
-  if (now - lastFrameAt < FRAME_COOLDOWN_MS) return false; // frena ráfagas
+  if (now - lastFrameAt < FRAME_COOLDOWN_MS) return false;
   lastFrameAt = now;
   const last = seenRecently.get(code) || 0;
-  if (now - last < SAME_CODE_COOLDOWN_MS) return false;    // no repetir mismo code
+  if (now - last < SAME_CODE_COOLDOWN_MS) return false;
   seenRecently.set(code, now);
   for (const [c,t] of seenRecently) if (now - t > SAME_CODE_COOLDOWN_MS*3) seenRecently.delete(c);
   return true;
@@ -301,7 +357,6 @@ let camStream=null, detectLoop=null, quaggaActive=false;
 
 function log(msg){ els.diag.textContent += msg + "\n"; }
 
-// Listar cámaras
 async function listCameras(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
@@ -325,10 +380,7 @@ els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   }
 });
 
-els.btnCamStart.addEventListener('click', async ()=>{
-  const engine = els.engineSelect.value;
-  if (engine === 'bd') startBD(); else startQuagga();
-});
+els.btnCamStart.addEventListener('click', ()=>{ const engine = els.engineSelect.value; if (engine === 'bd') startBD(); else startQuagga(); });
 els.btnCamStop.addEventListener('click', stopAll);
 els.btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 
@@ -341,7 +393,7 @@ els.btnTorch.addEventListener('click', async ()=>{
   }catch(e){ alert('No fue posible activar la linterna'); }
 });
 
-// --- BarcodeDetector ---
+// --- BD ---
 async function startBD(){
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   stopQuagga();
@@ -368,8 +420,6 @@ function stopBD(){
 function runDetectLoop(){
   const video = els.videoCam;
   const auto = els.chkAuto.checked;
-  const beepEl = document.getElementById('beep');
-  const doBeep = () => { if(!els.chkBeep.checked) return; try{ beepEl.currentTime=0; beepEl.play(); }catch(_){} };
   const step = async () => {
     if(!camStream) return;
     try{
@@ -378,11 +428,8 @@ function runDetectLoop(){
         runDetectLoop._last = ts;
         const codes = await detector.detect(video);
         if (codes && codes.length) {
-          const code = codes[0].rawValue?.trim();
-          if (code && canAccept(code)) {
-            doBeep();
-            if (auto) addScanLine(code);
-          }
+          const raw = codes[0].rawValue?.trim();
+          if (raw && canAccept(raw)) handleScannedRaw(raw);
         }
       }
     }catch(e){}
@@ -403,11 +450,7 @@ function startQuagga(){
     inputStream: {
       type: "LiveStream",
       target: els.quaggaArea,
-      constraints: {
-        facingMode: "environment",
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
+      constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
     },
     locator: { patchSize: "medium", halfSample: true },
     decoder: { readers },
@@ -423,25 +466,19 @@ function startQuagga(){
   window.Quagga?.onDetected(onQuaggaDetected);
   window.Quagga?.onProcessed(drawQuaggaBoxes);
 }
-function stopQuagga(){
-  try { window.Quagga?.stop(); } catch(_) {}
-  quaggaActive = false;
-  clearOverlay();
-}
+function stopQuagga(){ try { window.Quagga?.stop(); } catch(_) {} quaggaActive = false; clearOverlay(); }
 function onQuaggaDetected(data){
-  const code = data?.codeResult?.code?.trim();
-  if (!code) return;
-  if (!canAccept(code)) return;
-  if (els.chkBeep.checked) { try{ const b=document.getElementById('beep'); b.currentTime=0; b.play(); }catch(_){} }
-  if (els.chkAuto.checked) addScanLine(code);
+  const raw = data?.codeResult?.code?.trim();
+  if (!raw) return;
+  if (!canAccept(raw)) return;
+  handleScannedRaw(raw);
 }
 function drawQuaggaBoxes(result){
   const ctx = els.quaggaOverlay.getContext("2d");
   clearOverlay();
   if (!result) return;
   const draw = (path, color, width=2) => {
-    ctx.beginPath();
-    ctx.moveTo(path[0].x, path[0].y);
+    ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
     for (let i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y);
     ctx.lineTo(path[0].x, path[0].y);
     ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke();
@@ -454,14 +491,32 @@ function overlayResize(){
   els.quaggaOverlay.width = rect.width;
   els.quaggaOverlay.height = rect.height;
 }
-function clearOverlay(){
-  const ctx = els.quaggaOverlay.getContext("2d");
-  ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height);
-}
+function clearOverlay(){ const ctx = els.quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height); }
 window.addEventListener("resize", overlayResize);
 
 // --- Stop all ---
 function stopAll(){ stopBD(); stopQuagga(); }
+
+// ===== Lógica de registro (común para escáner) =====
+function handleScannedRaw(raw){
+  // Si raw es código de barras: debe existir en catálogo. Si no, ERROR
+  const auto = els.chkAuto.checked;
+  const item = state.catalog.get(raw);
+  if(item){
+    const key = toKey(item.MOD,item.COLOR,item.TALLA);
+    if (auto) state.scans.push(key);
+    state.groupedScans = group(state.scans);
+    els.scanLog.innerHTML = renderLog(state.scans);
+    els.scanGrouped.innerHTML = renderTable(state.groupedScans);
+    saveLocal();
+    setStatusOk('OK: ' + raw);
+    if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
+  }else{
+    // Si no existe, marcamos error, NO agregamos
+    setStatusErr('NO EN CATÁLOGO: ' + raw);
+    try{ els.sndErr.currentTime=0; els.sndErr.play(); }catch(_) {}
+  }
+}
 
 // ===== Reporte / filtros =====
 const filtros = { MOD: els.filtroMOD, COLOR: els.filtroCOLOR, TALLA: els.filtroTALLA, TEMP: els.filtroTEMP };
@@ -474,7 +529,7 @@ Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateRep
 function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']); els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']); els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
 els.btnGenerarReporte.addEventListener('click',()=>generateReport());
 els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-antirrebote'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 // ===== Init =====
 function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
