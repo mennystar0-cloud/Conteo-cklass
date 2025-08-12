@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS (PWA) – Dual + Manual + Sonidos + Alerta + Pausa</title>
+  <title>Conteo CKLASS (PWA) – Dual + Manual + Sonidos WebAudio + Alerta + Pausa</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
@@ -22,7 +22,8 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
     #quaggaArea { position: relative; background: #000; }
-    /* Área de cámara compacta */
+    .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
+    /* Área de cámara compacta (≈ mitad de alto) */
     .cam-compact { height: 45vh; max-height: 420px; }
   </style>
 </head>
@@ -120,6 +121,7 @@
               <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
               <button id="btnTorch" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Linterna</button>
               <button id="btnFullscreen" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Pantalla completa</button>
+              <button id="btnAudio" class="px-3 py-2 text-sm rounded-lg bg-purple-600 text-white">Activar sonidos</button>
             </div>
             <div class="text-xs" id="httpsStatus"></div>
 
@@ -187,17 +189,13 @@
     </footer>
   </div>
 
-  <!-- Sonidos -->
-  <audio id="sndOk" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav"></audio>
-  <audio id="sndErr" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav"></audio>
-
   <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 
 <script>
 // ======= Estado / elementos =======
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
 const state = { catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
-let SCAN_PAUSED = false; // <— NUEVO: pausa lógica de lecturas
+let SCAN_PAUSED = false;
 
 const els = {
   tabs: document.querySelectorAll('.tab-btn'),
@@ -219,7 +217,9 @@ const els = {
   chkAuto: document.getElementById('chkAuto'), chkBeep: document.getElementById('chkBeep'),
   quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea'),
   manualClave: document.getElementById('manualClave'), manualQty: document.getElementById('manualQty'), btnManual: document.getElementById('btnManual'),
-  sndOk: document.getElementById('sndOk'), sndErr: document.getElementById('sndErr'), lastStatus: document.getElementById('lastStatus')
+  lastStatus: document.getElementById('lastStatus'),
+  // botón de audio
+  btnAudio: document.getElementById('btnAudio')
 };
 
 // ===== Tabs =====
@@ -241,6 +241,38 @@ function updateHttpsStatus(){
 }
 updateHttpsStatus();
 
+// ===== Sonido: WebAudio (desbloqueo + beeps) =====
+let audioCtx = null, audioReady = false;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  audioReady = true;
+  // feedback rápido
+  playTone(900, 60, 'square', 0.06);
+}
+function playTone(freq=880, ms=90, type='sine', gain=0.08) {
+  if (!audioReady || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  g.gain.value = gain;
+  osc.connect(g).connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+  osc.start(now);
+  osc.stop(now + ms/1000);
+}
+function playOk(){ if(!els.chkBeep.checked) return; playTone(1200, 90, 'square', 0.08); }
+function playErr(){ playTone(220, 140, 'sawtooth', 0.10); }
+function buzz(pattern=[120]){ if (navigator.vibrate) navigator.vibrate(pattern); }
+
+// botón visible para activar sonidos
+els.btnAudio.addEventListener('click', initAudio);
+// auto-desbloqueo con primer toque/tecla
+const _unlock = ()=>{ initAudio(); document.removeEventListener('click', _unlock); document.removeEventListener('keydown', _unlock); };
+document.addEventListener('click', _unlock, { once:true });
+document.addEventListener('keydown', _unlock, { once:true });
+
 // ===== Utils =====
 const toKey = (mod, color, talla) => `${(mod||'').trim()}|${(color||'').trim()}|${(talla||'').trim()}`.toUpperCase();
 function parseLine(line){ line=line.trim(); if(!line) return null;
@@ -258,9 +290,9 @@ function renderTable(map, headers=['Clave','Cantidad']){
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert-pause'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-webaudio-alert-pause'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
-function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
+function refreshUI(){ document.getElementById('catalogoStatus').textContent=`${state.catalog.size} códigos de barras cargados.`; document.getElementById('existenciaStatus').textContent=`${state.existencia.size} claves agrupadas.`; document.getElementById('existenciaPreview').innerHTML=renderTable(state.existencia); document.getElementById('scanLog').innerHTML=renderLog(state.scans); document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans); }
 function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
@@ -270,7 +302,7 @@ els.fileCatalogo.addEventListener('change', async (e)=>{
   const lines=text.split(/\r?\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
   const idx={BC:cols.indexOf('CODIGO_BARRA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), TEMP:cols.indexOf('TEMPORADA')};
   for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue; const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim(); const key=toKey(MOD,COLOR,TALLA); state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]); state.indexByKey.get(key).push(bc); if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); }
-  els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
+  document.getElementById('catalogoStatus').textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
 });
 els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
 function parseExistenciaCSV(text){
@@ -282,55 +314,65 @@ function parseExistenciaCSV(text){
     else if(idx.KEY>=0 && p[idx.KEY]){ const raw=p[idx.KEY].trim(); if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); } else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); } }
     if(!key) continue; acc.set(key,(acc.get(key)||0)+(qty||0)); if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
   }
-  state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
+  state.existencia=acc; document.getElementById('existenciaCSVStatus').textContent=`${state.existencia.size} claves cargadas.`;
 }
 
 // ===== Pegar existencia =====
-els.btnProcesarExistencia.addEventListener('click',()=>{
-  const keys=[]; const notFound=[]; els.existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
-  state.existencia=group(keys); els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; els.existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
+document.getElementById('btnProcesarExistencia').addEventListener('click',()=>{
+  const keys=[]; const notFound=[];
+  document.getElementById('existenciaInput').value.split(/\r?\n/).forEach(line=>{
+    const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key);
+  });
+  state.existencia=group(keys);
+  document.getElementById('existenciaStatus').textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`;
+  document.getElementById('existenciaPreview').innerHTML=renderTable(state.existencia);
+  saveLocal();
 });
-els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
+document.getElementById('btnLimpiarExistencia').addEventListener('click',()=>{
+  document.getElementById('existenciaInput').value=''; state.existencia.clear();
+  document.getElementById('existenciaPreview').innerHTML=''; document.getElementById('existenciaStatus').textContent='0 registros.'; saveLocal();
+});
 
-// ===== Escaneo manual =====
+// ===== Escaneo/Registro manual =====
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){
   const p=parseLine(line);
-  if(!p){ setStatusErr('Entrada inválida'); try{els.sndErr.play();}catch(_){} alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
-  if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} alert('Código no encontrado en catálogo: '+p.raw); return; }
-  if(p.type==='KEY'){ state.scans.push(p.key); state.groupedScans=group(state.scans); setStatusOk('OK manual'); if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} } }
-  els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal();
+  if(!p){ setStatusErr('Entrada inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
+  if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+p.raw); return; }
+  if(p.type==='KEY'){ state.scans.push(p.key); state.groupedScans=group(state.scans); setStatusOk('OK manual'); playOk(); }
+  document.getElementById('scanLog').innerHTML=renderLog(state.scans); document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans); saveLocal();
 }
 
-// ===== Registrar manual (botón) =====
-els.btnManual.addEventListener('click', ()=>{
-  const clave = (els.manualClave.value||'').trim();
-  let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
-  if(!clave){ setStatusErr('Entrada vacía'); try{els.sndErr.play();}catch(_){} return; }
+document.getElementById('btnManual').addEventListener('click', ()=>{
+  const clave = (document.getElementById('manualClave').value||'').trim();
+  let qty = parseInt((document.getElementById('manualQty').value||'1'),10); if(!qty || qty<1) qty=1;
+  if(!clave){ setStatusErr('Entrada vacía'); playErr(); buzz([70]); return; }
   if(/^\d{6,}$/.test(clave)){
     const item = state.catalog.get(clave);
-    if(!item){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} alert('Código no encontrado en catálogo: '+clave); return; }
+    if(!item){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+clave); return; }
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
     for(let i=0;i<qty;i++) state.scans.push(key);
     state.groupedScans=group(state.scans);
-    setStatusOk(`+${qty} por BC`);
-    if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
+    setStatusOk(`+${qty} por BC`); playOk();
   }else{
     let parsed = parseLine(clave);
-    if(!parsed){ setStatusErr('Clave inválida'); try{els.sndErr.play();}catch(_){} alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
-    if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} alert('Código no encontrado en catálogo: '+clave); return; }
+    if(!parsed){ setStatusErr('Clave inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
+    if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+clave); return; }
     if(parsed.type==='KEY'){
       for(let i=0;i<qty;i++) state.scans.push(parsed.key);
       state.groupedScans=group(state.scans);
-      setStatusOk(`+${qty} manual`);
-      if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
+      setStatusOk(`+${qty} manual`); playOk();
     }
   }
-  els.scanLog.innerHTML=renderLog(state.scans);
-  els.scanGrouped.innerHTML=renderTable(state.groupedScans);
+  document.getElementById('scanLog').innerHTML=renderLog(state.scans);
+  document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans);
   saveLocal();
-  els.manualClave.value=''; els.manualQty.value='1';
+  document.getElementById('manualClave').value=''; document.getElementById('manualQty').value='1';
 });
+
+document.getElementById('btnUndo').addEventListener('click',()=>{ state.scans.pop(); state.groupedScans=group(state.scans); document.getElementById('scanLog').innerHTML=renderLog(state.scans); document.getElementById('scanGrouped').innerHTML=renderTable(state.groupedScans); saveLocal(); });
+document.getElementById('btnResetEscaneo').addEventListener('click',()=>{ if(!confirm('¿Reiniciar escaneos?')) return; state.scans=[]; state.groupedScans.clear(); document.getElementById('scanLog').innerHTML=''; document.getElementById('scanGrouped').innerHTML=''; saveLocal(); });
+document.getElementById('btnCargarPruebaEscaneo').addEventListener('click',()=>{ ['10902400','000-01,ORO-240','000-01|ORO|250','10909999'].forEach(addScanLine); });
 
 // ===== Antirrebote / anti-duplicados (cámara) =====
 const FRAME_COOLDOWN_MS = 220;
@@ -348,13 +390,14 @@ function canAccept(code){
   return true;
 }
 
-// ===== Motores =====
+// ===== Motores cámara =====
 const supportsBarcode = "BarcodeDetector" in window;
 let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','itf','codabar']}) : null;
-let camStream=null, detectLoop=null, quaggaActive=false;
+let camStream=null, detectLoop=null;
 
 function log(msg){ els.diag.textContent += msg + "\n"; }
 
+// cámaras disponibles
 async function listCameras(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
@@ -392,6 +435,7 @@ els.btnCamStart.addEventListener('click', ()=>{ const engine = els.engineSelect.
 els.btnCamStop.addEventListener('click', stopAll);
 els.btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 
+// Linterna
 els.btnTorch.addEventListener('click', async ()=>{
   try{
     if (!QUIRKS.track) return alert('Cámara no activa');
@@ -401,7 +445,7 @@ els.btnTorch.addEventListener('click', async ()=>{
   }catch(e){ alert('No fue posible activar la linterna'); }
 });
 
-// --- BD ---
+// --- BarcodeDetector (rápido) ---
 async function startBD(){
   stopQuagga();
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
@@ -445,7 +489,8 @@ function runDetectLoop(){
   detectLoop = requestAnimationFrame(step);
 }
 
-// --- Quagga2 ---
+// --- Quagga2 (compatibilidad) ---
+let quaggaActive=false;
 function startQuagga(){
   stopBD();
   const readers = [
@@ -512,14 +557,14 @@ function handleScannedRaw(raw){
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
     if (els.chkAuto.checked) state.scans.push(key);
     state.groupedScans = group(state.scans);
-    els.scanLog.innerHTML = renderLog(state.scans);
-    els.scanGrouped.innerHTML = renderTable(state.groupedScans);
+    document.getElementById('scanLog').innerHTML = renderLog(state.scans);
+    document.getElementById('scanGrouped').innerHTML = renderTable(state.groupedScans);
     saveLocal();
     setStatusOk('OK: ' + raw);
-    if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
+    playOk();
   }else{
     setStatusErr('NO EN CATÁLOGO: ' + raw);
-    try{ els.sndErr.currentTime=0; els.sndErr.play(); }catch(_) {}
+    playErr(); buzz([80,40,80]);
     alert('Código NO encontrado en catálogo: ' + raw + '\n\nNo se registró. Verifica el catálogo o usa "Registrar manual".');
   }
 }
@@ -532,10 +577,10 @@ function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TE
   if(filtros.TALLA.value && !TALLA.toUpperCase().includes(filtros.TALLA.value.toUpperCase())) return false;
   if(filtros.TEMP.value && !TEMP.includes(filtros.TEMP.value.toUpperCase())) return false; return true; }
 Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateReport(true)));
-function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']); els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']); els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
-els.btnGenerarReporte.addEventListener('click',()=>generateReport());
-els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert-pause'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } document.getElementById('tablaEscaneados').innerHTML=renderTable(escT,['Clave','Escaneado']); document.getElementById('tablaSobrantes').innerHTML=renderTable(sobr,['Clave','Sobrante']); document.getElementById('tablaFaltantes').innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
+document.getElementById('btnGenerarReporte').addEventListener('click',()=>generateReport());
+document.getElementById('btnExportarCSV').addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+document.getElementById('btnRespaldarJSON').addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-webaudio-alert-pause'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 // ===== Init =====
 function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
