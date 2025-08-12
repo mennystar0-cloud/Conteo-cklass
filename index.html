@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS (PWA) – Dual + Manual + Sonidos + Alerta Bloqueante</title>
+  <title>Conteo CKLASS (PWA) – Dual + Manual + Sonidos + Alerta + Pausa</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
@@ -17,13 +17,13 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root { --safe-bottom: env(safe-area-inset-bottom); --safe-top: env(safe-area-inset-top); }
-    @media (max-width: 640px) { .mobile-fullscreen { height: calc(100dvh - 160px - var(--safe-bottom)); } .video-wrap { height: 100%; } }
     video { object-fit: cover; }
     @media print { .no-print { display:none!important; } }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
     #quaggaArea { position: relative; background: #000; }
-    .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
+    /* Área de cámara compacta */
+    .cam-compact { height: 45vh; max-height: 420px; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -115,6 +115,7 @@
               <button id="btnSolicitarPermisos" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Permisos</button>
               <button id="btnCamStart" class="px-3 py-2 text-sm rounded-lg bg-green-600 text-white">Iniciar</button>
               <button id="btnCamStop" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Detener</button>
+              <button id="btnTogglePause" class="px-3 py-2 text-sm rounded-lg bg-yellow-500 text-white">Pausar escaneo</button>
               <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
               <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
               <button id="btnTorch" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Linterna</button>
@@ -122,7 +123,8 @@
             </div>
             <div class="text-xs" id="httpsStatus"></div>
 
-            <div id="quaggaArea" class="video-wrap mobile-fullscreen rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
+            <!-- Área de cámara compacta -->
+            <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
               <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
               <canvas id="quaggaOverlay"></canvas>
             </div>
@@ -186,12 +188,8 @@
   </div>
 
   <!-- Sonidos -->
-  <audio id="sndOk" preload="auto">
-    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
-  </audio>
-  <audio id="sndErr" preload="auto">
-    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
-  </audio>
+  <audio id="sndOk" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav"></audio>
+  <audio id="sndErr" preload="auto"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav"></audio>
 
   <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 
@@ -199,6 +197,8 @@
 // ======= Estado / elementos =======
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
 const state = { catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
+let SCAN_PAUSED = false; // <— NUEVO: pausa lógica de lecturas
+
 const els = {
   tabs: document.querySelectorAll('.tab-btn'),
   panes: { importar:document.getElementById('tab-importar'), escanear:document.getElementById('tab-escanear'), reporte:document.getElementById('tab-reporte') },
@@ -211,7 +211,7 @@ const els = {
   cameraSelect: document.getElementById('cameraSelect'), engineSelect: document.getElementById('engineSelect'),
   btnSolicitarPermisos:document.getElementById('btnSolicitarPermisos'),
   btnCamStart: document.getElementById('btnCamStart'), btnCamStop:document.getElementById('btnCamStop'), btnFullscreen:document.getElementById('btnFullscreen'),
-  btnTorch: document.getElementById('btnTorch'),
+  btnTorch: document.getElementById('btnTorch'), btnTogglePause: document.getElementById('btnTogglePause'),
   httpsStatus:document.getElementById('httpsStatus'), videoCam:document.getElementById('videoCam'), diag: document.getElementById('diag'),
   btnGenerarReporte: document.getElementById('btnGenerarReporte'), btnExportarCSV:document.getElementById('btnExportarCSV'), btnRespaldarJSON:document.getElementById('btnRespaldarJSON'),
   tablaEscaneados: document.getElementById('tablaEscaneados'), tablaSobrantes:document.getElementById('tablaSobrantes'), tablaFaltantes:document.getElementById('tablaFaltantes'),
@@ -258,11 +258,9 @@ function renderTable(map, headers=['Clave','Cantidad']){
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert-pause'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
 function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
-
-// Estado visual
 function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
@@ -294,8 +292,15 @@ els.btnProcesarExistencia.addEventListener('click',()=>{
 });
 els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
-// ===== Escaneo manual (Enter) =====
+// ===== Escaneo manual =====
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
+function addScanLine(line){
+  const p=parseLine(line);
+  if(!p){ setStatusErr('Entrada inválida'); try{els.sndErr.play();}catch(_){} alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
+  if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} alert('Código no encontrado en catálogo: '+p.raw); return; }
+  if(p.type==='KEY'){ state.scans.push(p.key); state.groupedScans=group(state.scans); setStatusOk('OK manual'); if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} } }
+  els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal();
+}
 
 // ===== Registrar manual (botón) =====
 els.btnManual.addEventListener('click', ()=>{
@@ -373,6 +378,16 @@ els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   }
 });
 
+// Pausar/Reanudar
+els.btnTogglePause.addEventListener('click', ()=>{
+  SCAN_PAUSED = !SCAN_PAUSED;
+  els.btnTogglePause.textContent = SCAN_PAUSED ? 'Reanudar escaneo' : 'Pausar escaneo';
+  els.btnTogglePause.className = SCAN_PAUSED
+    ? 'px-3 py-2 text-sm rounded-lg bg-blue-500 text-white'
+    : 'px-3 py-2 text-sm rounded-lg bg-yellow-500 text-white';
+  setStatusOk(SCAN_PAUSED ? 'PAUSADO' : 'EN ESCANEO');
+});
+
 els.btnCamStart.addEventListener('click', ()=>{ const engine = els.engineSelect.value; if (engine === 'bd') startBD(); else startQuagga(); });
 els.btnCamStop.addEventListener('click', stopAll);
 els.btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
@@ -388,8 +403,8 @@ els.btnTorch.addEventListener('click', async ()=>{
 
 // --- BD ---
 async function startBD(){
-  if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   stopQuagga();
+  if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   try{
     const deviceId = els.cameraSelect.value || undefined;
     camStream = await navigator.mediaDevices.getUserMedia({
@@ -414,6 +429,7 @@ function runDetectLoop(){
   const step = async () => {
     if(!camStream) return;
     try{
+      if (SCAN_PAUSED) { detectLoop = requestAnimationFrame(step); return; }
       const ts=performance.now();
       if(!runDetectLoop._last || ts-runDetectLoop._last > 160){
         runDetectLoop._last = ts;
@@ -459,6 +475,7 @@ function startQuagga(){
 }
 function stopQuagga(){ try { window.Quagga?.stop(); } catch(_) {} quaggaActive = false; clearOverlay(); }
 function onQuaggaDetected(data){
+  if (SCAN_PAUSED) return;
   const raw = data?.codeResult?.code?.trim();
   if (!raw) return;
   if (!canAccept(raw)) return;
@@ -488,7 +505,7 @@ window.addEventListener("resize", overlayResize);
 // --- Stop all ---
 function stopAll(){ stopBD(); stopQuagga(); }
 
-// ===== Registro común para escáner (con ALERTA BLOQUEANTE en inválidos) =====
+// ===== Registro común (con ALERTA BLOQUEANTE en inválidos) =====
 function handleScannedRaw(raw){
   const item = state.catalog.get(raw);
   if(item){
@@ -503,7 +520,6 @@ function handleScannedRaw(raw){
   }else{
     setStatusErr('NO EN CATÁLOGO: ' + raw);
     try{ els.sndErr.currentTime=0; els.sndErr.play(); }catch(_) {}
-    // ALERTA BLOQUEANTE: hasta cerrar, no sigue escaneando
     alert('Código NO encontrado en catálogo: ' + raw + '\n\nNo se registró. Verifica el catálogo o usa "Registrar manual".');
   }
 }
@@ -519,7 +535,7 @@ Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateRep
 function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']); els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']); els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
 els.btnGenerarReporte.addEventListener('click',()=>generateReport());
 els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert-pause'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 // ===== Init =====
 function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
