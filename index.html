@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS (PWA) – Lector Dual + Antirrebote + Manual + Sonidos</title>
+  <title>Conteo CKLASS (PWA) – Dual + Manual + Sonidos + Alerta Bloqueante</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
@@ -29,7 +29,7 @@
 <body class="bg-gray-50 text-gray-900">
   <div class="max-w-7xl mx-auto p-4">
     <header class="mb-4 no-print">
-      <h1 class="text-2xl font-bold">Módulo de Conteo – PWA (Dual + Manual + Sonidos)</h1>
+      <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
       <p class="text-sm text-gray-600">Importar → Escanear (cámara/lector) o Registrar manual → Reporte. HTTPS/localhost para cámara.</p>
     </header>
 
@@ -82,7 +82,7 @@
         <p class="text-xs text-gray-600 mb-3">HTTPS/localhost. Si no detecta, cambia a Quagga2. Usa Registro manual si no hay código o hay cantidad.</p>
 
         <div class="grid md:grid-cols-2 gap-4 mb-3">
-          <!-- Columna izquierda: manual + lector/teclado -->
+          <!-- Izquierda: manual + lector/teclado -->
           <div>
             <label class="text-xs text-gray-500">Entrada con lector/teclado</label>
             <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="Escanea o escribe: 10902400 ó 000-01,ORO-240 ó 000-01|ORO|240" />
@@ -103,7 +103,7 @@
             </div>
           </div>
 
-          <!-- Columna derecha: cámara -->
+          <!-- Derecha: cámara -->
           <div>
             <label class="text-xs text-gray-500">Cámara</label>
             <div class="flex flex-wrap items-center gap-2 mb-2">
@@ -187,11 +187,9 @@
 
   <!-- Sonidos -->
   <audio id="sndOk" preload="auto">
-    <!-- beep corto -->
     <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
   </audio>
   <audio id="sndErr" preload="auto">
-    <!-- tono grave corto (otro WAV simple) -->
     <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
   </audio>
 
@@ -220,9 +218,7 @@ const els = {
   filtroMOD: document.getElementById('filtroMOD'), filtroCOLOR: document.getElementById('filtroCOLOR'), filtroTALLA: document.getElementById('filtroTALLA'), filtroTEMP: document.getElementById('filtroTEMP'),
   chkAuto: document.getElementById('chkAuto'), chkBeep: document.getElementById('chkBeep'),
   quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea'),
-  // Manual
   manualClave: document.getElementById('manualClave'), manualQty: document.getElementById('manualQty'), btnManual: document.getElementById('btnManual'),
-  // Sonidos y estado
   sndOk: document.getElementById('sndOk'), sndErr: document.getElementById('sndErr'), lastStatus: document.getElementById('lastStatus')
 };
 
@@ -262,11 +258,11 @@ function renderTable(map, headers=['Clave','Cantidad']){
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
 function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
 
-// Badge estado
+// Estado visual
 function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
@@ -306,21 +302,18 @@ els.btnManual.addEventListener('click', ()=>{
   const clave = (els.manualClave.value||'').trim();
   let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
   if(!clave){ setStatusErr('Entrada vacía'); try{els.sndErr.play();}catch(_){} return; }
-  // Acepta clave directa o código de barras
   if(/^\d{6,}$/.test(clave)){
-    // Código de barras → debe existir en catálogo
     const item = state.catalog.get(clave);
-    if(!item){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} return; }
+    if(!item){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} alert('Código no encontrado en catálogo: '+clave); return; }
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
     for(let i=0;i<qty;i++) state.scans.push(key);
     state.groupedScans=group(state.scans);
     setStatusOk(`+${qty} por BC`);
     if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
   }else{
-    // Clave tipo MOD|COLOR|TALLA o MOD,COLOR-TALLA
     let parsed = parseLine(clave);
-    if(!parsed){ setStatusErr('Clave inválida'); try{els.sndErr.play();}catch(_){} return; }
-    if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} return; }
+    if(!parsed){ setStatusErr('Clave inválida'); try{els.sndErr.play();}catch(_){} alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
+    if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); try{els.sndErr.play();}catch(_){} alert('Código no encontrado en catálogo: '+clave); return; }
     if(parsed.type==='KEY'){
       for(let i=0;i<qty;i++) state.scans.push(parsed.key);
       state.groupedScans=group(state.scans);
@@ -334,7 +327,7 @@ els.btnManual.addEventListener('click', ()=>{
   els.manualClave.value=''; els.manualQty.value='1';
 });
 
-// ===== Antirrebote / anti-duplicados (para cámara) =====
+// ===== Antirrebote / anti-duplicados (cámara) =====
 const FRAME_COOLDOWN_MS = 220;
 const SAME_CODE_COOLDOWN_MS = 1800;
 let lastFrameAt = 0;
@@ -418,15 +411,13 @@ function stopBD(){
   detectLoop=null;
 }
 function runDetectLoop(){
-  const video = els.videoCam;
-  const auto = els.chkAuto.checked;
   const step = async () => {
     if(!camStream) return;
     try{
       const ts=performance.now();
       if(!runDetectLoop._last || ts-runDetectLoop._last > 160){
         runDetectLoop._last = ts;
-        const codes = await detector.detect(video);
+        const codes = await detector.detect(els.videoCam);
         if (codes && codes.length) {
           const raw = codes[0].rawValue?.trim();
           if (raw && canAccept(raw)) handleScannedRaw(raw);
@@ -497,14 +488,12 @@ window.addEventListener("resize", overlayResize);
 // --- Stop all ---
 function stopAll(){ stopBD(); stopQuagga(); }
 
-// ===== Lógica de registro (común para escáner) =====
+// ===== Registro común para escáner (con ALERTA BLOQUEANTE en inválidos) =====
 function handleScannedRaw(raw){
-  // Si raw es código de barras: debe existir en catálogo. Si no, ERROR
-  const auto = els.chkAuto.checked;
   const item = state.catalog.get(raw);
   if(item){
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
-    if (auto) state.scans.push(key);
+    if (els.chkAuto.checked) state.scans.push(key);
     state.groupedScans = group(state.scans);
     els.scanLog.innerHTML = renderLog(state.scans);
     els.scanGrouped.innerHTML = renderTable(state.groupedScans);
@@ -512,9 +501,10 @@ function handleScannedRaw(raw){
     setStatusOk('OK: ' + raw);
     if(els.chkBeep.checked){ try{ els.sndOk.currentTime=0; els.sndOk.play(); }catch(_){} }
   }else{
-    // Si no existe, marcamos error, NO agregamos
     setStatusErr('NO EN CATÁLOGO: ' + raw);
     try{ els.sndErr.currentTime=0; els.sndErr.play(); }catch(_) {}
+    // ALERTA BLOQUEANTE: hasta cerrar, no sigue escaneando
+    alert('Código NO encontrado en catálogo: ' + raw + '\n\nNo se registró. Verifica el catálogo o usa "Registrar manual".');
   }
 }
 
@@ -529,7 +519,7 @@ Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateRep
 function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']); els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']); els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT,sobr,falt}; }
 els.btnGenerarReporte.addEventListener('click',()=>generateReport());
 els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'dual-manual-sound-alert'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 // ===== Init =====
 function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
