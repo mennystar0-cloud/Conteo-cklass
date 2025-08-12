@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Conteo CKLASS (PWA)</title>
+  <meta name="theme-color" content="#1877F2" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <script>
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js');
+      });
+    }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --safe-bottom: env(safe-area-inset-bottom); --safe-top: env(safe-area-inset-top); }
+    @media (max-width: 640px) { .mobile-fullscreen { height: calc(100dvh - 140px - var(--safe-bottom)); } .video-wrap { height: 100%; } }
+    video { object-fit: cover; }
+    @media print { .no-print { display:none!important; } }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-7xl mx-auto p-4">
+    <header class="mb-4 no-print">
+      <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
+      <p class="text-sm text-gray-600">Instálalo en tu celular: menú ⋮ → "Agregar a pantalla principal". Requiere HTTPS/localhost para cámara.</p>
+    </header>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 mb-4 no-print">
+      <nav class="-mb-px flex gap-2" id="tabs">
+        <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
+        <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
+        <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Reporte</button>
+      </nav>
+    </div>
+
+    <!-- Importar -->
+    <section id="tab-importar" class="tab-pane block">
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
+          <p class="text-xs text-gray-600 mb-2">Esperado: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code>.</p>
+          <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+          <div id="catalogoStatus" class="text-xs text-gray-600">Sin cargar.</div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-4">
+          <h2 class="font-semibold mb-2">Existencia física (CSV)</h2>
+          <p class="text-xs text-gray-600 mb-2">Compatibles: <code>MOD,COLOR,TALLA,Cantidad</code> ó <code>codigo-Color-Talla,Cantidad</code>.</p>
+          <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+          <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-4 mt-4">
+        <h3 class="font-semibold mb-2">Pegar existencia (opcional)</h3>
+        <textarea id="existenciaInput" rows="5" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Líneas: MOD,COLOR-TALLA | MOD|COLOR|TALLA | CODIGO_BARRA"></textarea>
+        <div class="flex gap-2 mt-2">
+          <button id="btnProcesarExistencia" class="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">Procesar</button>
+          <button id="btnLimpiarExistencia" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Limpiar</button>
+        </div>
+        <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-4 mt-4">
+        <h3 class="font-semibold mb-2">Vista previa existencia agrupada</h3>
+        <div id="existenciaPreview" class="overflow-auto max-h-64 border rounded-xl"></div>
+      </div>
+    </section>
+
+    <!-- Escanear -->
+    <section id="tab-escanear" class="tab-pane hidden">
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Escaneo con cámara</h2>
+        <p class="text-xs text-gray-600 mb-3">Chrome/Edge en <b>HTTPS</b> o <b>localhost</b>. Si fue bloqueado, usa <b>Solicitar permisos</b> primero.</p>
+        <div class="grid md:grid-cols-2 gap-4 mb-3">
+          <div>
+            <label class="text-xs text-gray-500">Entrada manual / lector</label>
+            <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="10902400 ó 000-01,ORO-240 ó 000-01|ORO|240" />
+            <div class="flex flex-wrap gap-2 mb-4">
+              <button id="btnUndo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Deshacer</button>
+              <button id="btnResetEscaneo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Reiniciar</button>
+              <button id="btnCargarPruebaEscaneo" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Prueba</button>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-500">Cámara</label>
+            <div class="flex flex-wrap items-center gap-2 mb-2">
+              <select id="cameraSelect" class="border rounded p-1 text-xs"></select>
+              <button id="btnSolicitarPermisos" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Solicitar permisos</button>
+              <button id="btnCamStart" class="px-3 py-2 text-sm rounded-lg bg-green-600 text-white">Iniciar</button>
+              <button id="btnCamStop" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Detener</button>
+              <button id="btnFullscreen" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Pantalla completa</button>
+              <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
+              <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
+            </div>
+            <div class="text-xs" id="httpsStatus"></div>
+            <div class="video-wrap mobile-fullscreen rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
+              <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
+            </div>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <h3 class="font-semibold mb-2">Últimos escaneos</h3>
+            <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
+          </div>
+          <div>
+            <h3 class="font-semibold mb-2">Acumulado por clave</h3>
+            <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reporte -->
+    <section id="tab-reporte" class="tab-pane hidden">
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
+        <div class="flex flex-wrap gap-2 mb-3 no-print">
+          <button id="btnGenerarReporte" class="px-3 py-2 text-sm rounded-lg bg-blue-600 text-white">Generar</button>
+          <button id="btnExportarCSV" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Exportar CSV</button>
+          <button id="btnRespaldarJSON" class="px-3 py-2 text-sm rounded-lg bg-gray-100">Respaldo JSON</button>
+          <button id="btnImprimir" class="px-3 py-2 text-sm rounded-lg bg-gray-100" onclick="window.print()">Imprimir</button>
+        </div>
+        <div class="bg-gray-50 border rounded-xl p-3 mb-3 no-print">
+          <h3 class="font-semibold mb-2">Filtros</h3>
+          <div class="grid md:grid-cols-4 gap-2">
+            <input id="filtroMOD" placeholder="Filtrar MOD" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+            <input id="filtroCOLOR" placeholder="Filtrar COLOR" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+            <input id="filtroTALLA" placeholder="Filtrar TALLA" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+            <input id="filtroTEMP" placeholder="Filtrar TEMPORADA" class="rounded-lg border border-gray-200 p-2 text-sm"/>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-3 gap-4">
+          <div class="border rounded-xl p-3">
+            <h3 class="font-semibold mb-2">Escaneados</h3>
+            <div id="tablaEscaneados" class="overflow-auto max-h-80"></div>
+          </div>
+          <div class="border rounded-xl p-3">
+            <h3 class="font-semibold mb-2">Sobrantes</h3>
+            <div id="tablaSobrantes" class="overflow-auto max-h-80"></div>
+          </div>
+          <div class="border rounded-xl p-3">
+            <h3 class="font-semibold mb-2">Faltantes</h3>
+            <div id="tablaFaltantes" class="overflow-auto max-h-80"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="mt-6 text-xs text-gray-500 no-print">
+      <div id="diag" class="mono whitespace-pre-wrap p-2 bg-gray-100 rounded border"></div>
+    </footer>
+  </div>
+
+  <audio id="beep" preload="auto">
+    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" type="audio/wav">
+  </audio>
+
+<script>
+// Estado/elementos
+const QUIRKS = { cameraActive:false, track:null };
+const state = { catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
+const els = {
+  tabs: document.querySelectorAll('.tab-btn'),
+  panes: { importar:document.getElementById('tab-importar'), escanear:document.getElementById('tab-escanear'), reporte:document.getElementById('tab-reporte') },
+  fileCatalogo: document.getElementById('fileCatalogo'), catalogoStatus:document.getElementById('catalogoStatus'),
+  fileExistenciaCSV: document.getElementById('fileExistenciaCSV'), existenciaCSVStatus:document.getElementById('existenciaCSVStatus'),
+  existenciaInput: document.getElementById('existenciaInput'), btnProcesarExistencia:document.getElementById('btnProcesarExistencia'), btnLimpiarExistencia:document.getElementById('btnLimpiarExistencia'),
+  existenciaStatus: document.getElementById('existenciaStatus'), existenciaPreview:document.getElementById('existenciaPreview'),
+  scanInput: document.getElementById('scanInput'), scanLog:document.getElementById('scanLog'), scanGrouped:document.getElementById('scanGrouped'),
+  btnUndo: document.getElementById('btnUndo'), btnResetEscaneo:document.getElementById('btnResetEscaneo'), btnCargarPruebaEscaneo:document.getElementById('btnCargarPruebaEscaneo'),
+  cameraSelect: document.getElementById('cameraSelect'), btnSolicitarPermisos:document.getElementById('btnSolicitarPermisos'),
+  btnCamStart: document.getElementById('btnCamStart'), btnCamStop:document.getElementById('btnCamStop'), btnFullscreen:document.getElementById('btnFullscreen'),
+  videoCam: document.getElementById('videoCam'), beep:document.getElementById('beep'),
+  btnGenerarReporte: document.getElementById('btnGenerarReporte'), btnExportarCSV:document.getElementById('btnExportarCSV'), btnRespaldarJSON:document.getElementById('btnRespaldarJSON'),
+  tablaEscaneados: document.getElementById('tablaEscaneados'), tablaSobrantes:document.getElementById('tablaSobrantes'), tablaFaltantes:document.getElementById('tablaFaltantes'),
+  filtroMOD: document.getElementById('filtroMOD'), filtroCOLOR: document.getElementById('filtroCOLOR'), filtroTALLA: document.getElementById('filtroTALLA'), filtroTEMP: document.getElementById('filtroTEMP'),
+  chkAuto: document.getElementById('chkAuto'), chkBeep: document.getElementById('chkBeep'), httpsStatus: document.getElementById('httpsStatus'), diag: document.getElementById('diag')
+};
+
+// Tabs
+els.tabs.forEach(btn => btn.addEventListener('click', () => {
+  els.tabs.forEach(b => b.classList.remove('text-blue-600','border-blue-600'));
+  btn.classList.add('text-blue-600','border-blue-600');
+  Object.entries(els.panes).forEach(([k, el]) => {
+    el.classList.toggle('hidden', k !== btn.dataset.tab);
+    el.classList.toggle('block', k === btn.dataset.tab);
+  });
+}));
+
+// Diagnóstico
+function logDiag(message){ els.diag.textContent += message + "\\n"; }
+function updateHttpsStatus(){
+  const isSecure = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
+  els.httpsStatus.innerHTML = isSecure ? '<span class="text-green-700">Contexto seguro ✔ (HTTPS/localhost).</span>' : `<span class="text-red-700">Contexto NO seguro ✖ (${location.protocol}).</span>`;
+  logDiag('SecureContext: '+(window.isSecureContext?'yes':'no')+', protocol: '+location.protocol+', host: '+location.hostname);
+}
+updateHttpsStatus();
+
+// Utils
+const toKey = (mod, color, talla) => `${(mod||'').trim()}|${(color||'').trim()}|${(talla||'').trim()}`.toUpperCase();
+function parseLine(line){ line=line.trim(); if(!line) return null;
+  if(/^\\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item) return {type:'BC_NO_ENCONTRADO', raw:line}; return {type:'KEY', key:toKey(item.MOD,item.COLOR,item.TALLA)}; }
+  if(line.includes('|')){ const [m,c,t]=line.split('|').map(s=>s.trim()); if(!m||!c||!t) return null; return {type:'KEY', key:toKey(m,c,t)}; }
+  if(line.includes(',')){ const [mod,tail]=line.split(','); if(!mod||!tail) return null; if(tail.includes('-')){const [color,talla]=tail.split('-'); return {type:'KEY', key:toKey(mod,color,talla)};}
+  }
+  return null;
+}
+function renderTable(map, headers=['Clave','Cantidad']){
+  const rows=[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  return ['<table class="min-w-full text-sm">', `<thead><tr>${headers.map(h=>`<th class=\\"text-left px-2 py-1 border-b\\">${h}</th>`).join('')}</tr></thead>`, '<tbody>',
+    ...rows.map(([k,v])=>`<tr><td class="px-2 py-1 border-b">${k}</td><td class="px-2 py-1 border-b">${v}</td></tr>`), '</tbody></table>'].join('');
+}
+function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
+function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
+function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'pwa-v1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
+function refreshUI(){ document.getElementById('catalogoStatus').textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
+
+// Importar catálogo
+els.fileCatalogo.addEventListener('change', async (e)=>{
+  const text=await e.target.files?.[0]?.text(); if(!text) return;
+  const lines=text.split(/\\r?\\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
+  const idx={BC:cols.indexOf('CODIGO_BARRA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), TEMP:cols.indexOf('TEMPORADA')};
+  for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue; const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim(); const key=toKey(MOD,COLOR,TALLA); state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]); state.indexByKey.get(key).push(bc); if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); }
+  els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
+});
+
+// Importar existencia CSV
+els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
+function parseExistenciaCSV(text){
+  const lines=text.split(/\\r?\\n/).filter(Boolean); if(!lines.length) return; const cols=lines.shift().split(',').map(x=>x.trim().toUpperCase());
+  const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), CANT:cols.indexOf('CANTIDAD')};
+  const acc=new Map();
+  for(const line of lines){ const p=line.split(','); let key=''; let qty=1; if(idx.CANT>=0) qty=parseInt((p[idx.CANT]||'1').trim(),10)||0;
+    if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA]||''); }
+    else if(idx.KEY>=0 && p[idx.KEY]){ const raw=p[idx.KEY].trim(); if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); } else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); } }
+    if(!key) continue; acc.set(key,(acc.get(key)||0)+(qty||0)); if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
+  }
+  state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
+}
+
+// Pegar existencia
+els.btnProcesarExistencia.addEventListener('click',()=>{
+  const keys=[]; const notFound=[]; els.existenciaInput.value.split(/\\r?\\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
+  state.existencia=group(keys); els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; els.existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
+});
+els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
+
+// Escaneo manual
+els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
+function addScanLine(line){ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') state.scans.push('[NO ENCONTRADO] '+p.raw); else if(p.type==='KEY') state.scans.push(p.key); state.groupedScans=group(state.scans.filter(x=>!x.startsWith('[NO ENCONTRADO]'))); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal(); }
+els.btnUndo.addEventListener('click',()=>{ state.scans.pop(); state.groupedScans=group(state.scans.filter(x=>!x.startsWith('[NO ENCONTRADO]'))); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal(); });
+els.btnResetEscaneo.addEventListener('click',()=>{ if(!confirm('¿Reiniciar escaneos?')) return; state.scans=[]; state.groupedScans.clear(); els.scanLog.innerHTML=''; els.scanGrouped.innerHTML=''; saveLocal(); });
+els.btnCargarPruebaEscaneo.addEventListener('click',()=>{ ['10902400','000-01,ORO-240','000-01|ORO|250','10909999'].forEach(addScanLine); });
+
+// Cámara con BarcodeDetector + diagnóstico
+const supportsBarcode = 'BarcodeDetector' in window;
+let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e']}) : null;
+let camStream=null, detectLoop=null, lastCode='', lastWhen=0;
+
+async function listCameras(){
+  try{ const devices=await navigator.mediaDevices.enumerateDevices(); const vids=devices.filter(d=>d.kind==='videoinput'); els.cameraSelect.innerHTML = vids.map((d,i)=>`<option value="${d.deviceId}">${d.label||('Cámara '+(i+1))}</option>`).join(''); logDiag('Videoinputs: '+vids.length); }catch(e){ els.cameraSelect.innerHTML='<option value=\"\">Cámara predeterminada</option>'; logDiag('enumerateDevices error: '+e.message); }
+}
+async function solicitarPermisos(){
+  updateHttpsStatus();
+  try{
+    const tmpStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: {ideal:'environment'} }, audio:false });
+    tmpStream.getTracks().forEach(t=>t.stop());
+    alert('Permiso de cámara concedido. Ya puedes iniciar.');
+    await listCameras();
+  }catch(e){
+    logDiag('getUserMedia error: '+(e && (e.name+': '+e.message)));
+    alert('No fue posible solicitar permisos. ¿HTTPS/localhost? Revisa el diagnóstico al final.');
+  }
+}
+async function startCamera(){
+  if(!supportsBarcode){ alert('Tu navegador no soporta Barcode Detector API. Usa Chrome/Edge reciente.'); return; }
+  try{
+    const deviceId = document.getElementById('cameraSelect').value || undefined;
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: deviceId ? {exact: deviceId} : undefined, facingMode: deviceId? undefined : {ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} },
+      audio: false
+    });
+    document.getElementById('videoCam').srcObject = camStream;
+    QUIRKS.track = camStream.getVideoTracks()[0] || null;
+    runDetectLoop();
+  }catch(e){
+    logDiag('startCamera error: '+(e && (e.name+': '+e.message)));
+    alert('No se pudo iniciar la cámara. Usa "Solicitar permisos" primero. Revisa diagnóstico al final.');
+  }
+}
+function stopCamera(){ try{ camStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){} camStream=null; if(detectLoop) cancelAnimationFrame(detectLoop); detectLoop=null; QUIRKS.track=null; }
+async function runDetectLoop(){
+  if(!detector) return;
+  const video=document.getElementById('videoCam'); const auto=document.getElementById('chkAuto').checked; const beep=document.getElementById('chkBeep').checked;
+  const doBeep=()=>{ if(!beep) return; try{ document.getElementById('beep').currentTime=0; document.getElementById('beep').play(); }catch(_){} };
+  const step=async()=>{
+    if(!camStream) return;
+    try{
+      const ts=performance.now(); if(!runDetectLoop._last || ts-runDetectLoop._last>200){ runDetectLoop._last=ts;
+        const codes=await detector.detect(video);
+        if(codes && codes.length){ const code=codes[0].rawValue; const now=Date.now(); if(code && (code!==lastCode || (now-lastWhen)>700)){ lastCode=code; lastWhen=now; doBeep(); if(auto) addScanLine(code); } }
+      }
+    }catch(e){}
+    detectLoop=requestAnimationFrame(step);
+  };
+  detectLoop=requestAnimationFrame(step);
+}
+
+// Reporte y filtros
+const filtros = { MOD: document.getElementById('filtroMOD'), COLOR: document.getElementById('filtroCOLOR'), TALLA: document.getElementById('filtroTALLA'), TEMP: document.getElementById('filtroTEMP') };
+function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TEMP=(state.keyMeta.get(key)?.TEMPORADA||'').toUpperCase();
+  if(filtros.MOD.value && !MOD.toUpperCase().includes(filtros.MOD.value.toUpperCase())) return false;
+  if(filtros.COLOR.value && !COLOR.toUpperCase().includes(filtros.COLOR.value.toUpperCase())) return false;
+  if(filtros.TALLA.value && !TALLA.toUpperCase().includes(filtros.TALLA.value.toUpperCase())) return false;
+  if(filtros.TEMP.value && !TEMP.includes(filtros.TEMP.value.toUpperCase())) return false; return true; }
+Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateReport(true)));
+function generateReport(skipScroll){ const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); for(const k of keys){ if(!keyPassesFilters(k)) continue; const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e); } document.getElementById('tablaEscaneados').innerHTML=renderTable(escT,['Clave','Escaneado']); document.getElementById('tablaSobrantes').innerHTML=renderTable(sobr,['Clave','Sobrante']); document.getElementById('tablaFaltantes').innerHTML=renderTable(falt,['Clave','Faltante']); if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'}); return {escT, sobr, falt}; }
+document.getElementById('btnGenerarReporte').addEventListener('click',()=>generateReport());
+document.getElementById('btnExportarCSV').addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+document.getElementById('btnRespaldarJSON').addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'pwa-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+
+// Eventos
+document.getElementById('btnSolicitarPermisos').addEventListener('click', solicitarPermisos);
+document.getElementById('btnCamStart').addEventListener('click', startCamera);
+document.getElementById('btnCamStop').addEventListener('click', stopCamera);
+document.getElementById('btnFullscreen').addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
+
+// Init
+async function init(){ loadLocal(); refreshUI(); await listCameras(); const hash=(location.hash||'#importar').replace('#',''); const btn=[...document.querySelectorAll('.tab-btn')].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
+init();
+</script>
+</body>
+</html>
