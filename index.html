@@ -94,11 +94,23 @@
     <!-- FOLIO: publicar y cargar -->
     <div class="bg-white rounded-2xl shadow p-4 mt-4">
       <h3 class="font-semibold mb-2">Folio de cíclico (nube)</h3>
-      <div class="grid md:grid-cols-3 gap-2">
-        <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Ej: DAM-OFERTA-2025-08-13" />
-        <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico (subir a nube)</button>
+
+      <!-- NUEVA UI: almacén + generar folio -->
+      <div class="grid md:grid-cols-4 gap-2">
+        <select id="selAlmacen" class="rounded-lg border border-gray-200 p-2 text-sm">
+          <option value="CAL">Calzado (CAL)</option>
+          <option value="MUL">Sport (MUL)</option>
+          <option value="ROP">Ropa (ROP)</option>
+          <option value="GLOBAL">General (GLOBAL)</option>
+        </select>
+        <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Deja vacío para generar automático" />
+        <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
+        <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico</button>
+      </div>
+      <div class="mt-2">
         <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (desde nube)</button>
       </div>
+
       <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que en celular se cargue solo.</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
     </div>
@@ -286,8 +298,14 @@
 
 /* ---------------- Firebase (CDN v12.1.0) ---------------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy, limit, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import {
+  getFirestore, collection, addDoc, onSnapshot, serverTimestamp,
+  query, orderBy, limit, doc, setDoc, getDoc, runTransaction
+} from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytes, getDownloadURL,
+  setMaxOperationRetryTime, setMaxUploadRetryTime
+} from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
 
 /* >>>>>>>>>>>> Config tuya <<<<<<<<<<<<< */
 const firebaseConfig = {
@@ -302,6 +320,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+
+// Aumenta tolerancia a reintentos de Storage (para evitar retry-limit con mala señal)
+try {
+  setMaxOperationRetryTime(storage, 120000); // 120s
+  setMaxUploadRetryTime(storage, 120000);    // 120s
+} catch {}
 
 /* ---------------- Estado/refs ---------------- */
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
@@ -331,7 +355,12 @@ const els = {
   existenciaStatus: document.getElementById('existenciaStatus'), existenciaPreview: document.getElementById('existenciaPreview'),
 
   // FOLIO
-  folioInput: document.getElementById('folioInput'), btnPublicarFolio: document.getElementById('btnPublicarFolio'), btnCargarFolio: document.getElementById('btnCargarFolio'), folioStatus: document.getElementById('folioStatus'),
+  selAlmacen: document.getElementById('selAlmacen'),
+  folioInput: document.getElementById('folioInput'),
+  btnGenerarFolio: document.getElementById('btnGenerarFolio'),
+  btnPublicarFolio: document.getElementById('btnPublicarFolio'),
+  btnCargarFolio: document.getElementById('btnCargarFolio'),
+  folioStatus: document.getElementById('folioStatus'),
 
   // escanear
   scanInput: document.getElementById('scanInput'), scanLog: document.getElementById('scanLog'), scanGrouped: document.getElementById('scanGrouped'),
@@ -539,7 +568,7 @@ els.btnProcesarExistencia.addEventListener('click',()=>{
   saveLocal();
 });
 
-/* >>>>>>>>>>>>>>> PARCHE: Limpiar existencia (reseteo total) <<<<<<<<<<<<<<< */
+/* Limpiar existencia (reseteo total) */
 els.btnLimpiarExistencia.addEventListener('click', () => {
   els.existenciaInput.value = '';
   state.existencia = new Map();
@@ -550,7 +579,7 @@ els.btnLimpiarExistencia.addEventListener('click', () => {
   refreshUI();
 });
 
-/* >>>>>>>>>>>>>>> PARCHE: parseExistenciaCSV robusto (bug fijo) <<<<<<<<<<<<<<< */
+/* parseExistenciaCSV robusto (bug fijo) */
 function parseExistenciaCSV(text){
   const textNorm = (text||'').replace(/\uFEFF/g,'').replace(/;/g, ',');
   const lines = textNorm.split(/\r?\n/).filter(l => l.trim().length);
@@ -575,7 +604,7 @@ function parseExistenciaCSV(text){
       if (idxMOD >= 0 && idxCOLOR >= 0 && idxTALLA >= 0) {
         const MOD = p[idxMOD] || '';
         const COLOR = p[idxCOLOR] || '';
-        const TALLA = p[idxTALLA] || ''; // <-- fix real
+        const TALLA = p[idxTALLA] || '';
         key = toKey(MOD, COLOR, TALLA);
       } else if (idxKEY >= 0 && p[idxKEY]) {
         const raw = p[idxKEY].trim();
@@ -635,6 +664,36 @@ function parseExistenciaCSV(text){
   refreshUI();
 }
 
+/* ===== Folio: helpers de mes, padding y contador Firestore ===== */
+function mes3ES(d=new Date()){
+  const m = d.getMonth()+1;
+  const map = {1:'ENE',2:'FEB',3:'MAR',4:'ABR',5:'MAY',6:'JUN',7:'JUL',8:'AGO',9:'SEP',10:'OCT',11:'NOV',12:'DIC'};
+  return map[m];
+}
+function pad5(n){ return String(n).padStart(5,'0'); }
+
+/** Obtiene el siguiente consecutivo para (YYYY-MM, ALM) y devuelve el FOLIO tipo AGOCAL00001 */
+async function generarFolioAutomatico(alm){
+  alm = (alm||'').toUpperCase();
+  const d = new Date();
+  const y = d.getFullYear();
+  const ym = `${y}-${String(d.getMonth()+1).padStart(2,'0')}`; // 2025-08
+  const id = `${ym}_${alm}`; // doc de contador
+
+  const counterRef = doc(db, 'counters', id);
+  let folio = '';
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(counterRef);
+    const curr = snap.exists() ? (snap.data().seq||0) : 0;
+    const next = curr + 1;
+    tx.set(counterRef, { seq: next, updatedAt: serverTimestamp() }, { merge: true });
+    folio = `${mes3ES(d)}${alm}${pad5(next)}`; // ej: AGOCAL00001
+  });
+
+  return folio;
+}
+
 /* ===== Folio: publicar/cargar (Firestore + Storage) ===== */
 function mapToCSV(map, headers=['CLAVE','CANTIDAD']) {
   let out = headers.join(',') + '\n'; for (const [k,v] of map.entries()) out += `"${k.replaceAll('"','""')}",${v}\n`; return out;
@@ -676,16 +735,33 @@ async function cargarDesdeFolio(folio){
   listenSession();
   return cfg;
 }
+
+/* Botones Folio */
+els.btnGenerarFolio?.addEventListener('click', async ()=>{
+  try{
+    const alm = els.selAlmacen?.value || 'GLOBAL';
+    const f = await generarFolioAutomatico(alm);
+    els.folioInput.value = f;
+    els.folioStatus.textContent = `Folio generado: ${f}`;
+  }catch(e){
+    alert('No se pudo generar folio: ' + (e?.message||e));
+  }
+});
 els.btnPublicarFolio?.addEventListener('click', async ()=>{
   try{
     els.folioStatus.textContent = 'Publicando...';
-    const folio = els.folioInput.value;
+    let folio = (els.folioInput.value||'').trim();
+    if (!folio) {
+      const alm = els.selAlmacen?.value || 'GLOBAL';
+      folio = await generarFolioAutomatico(alm);
+      els.folioInput.value = folio;
+    }
     const cfg = await publicarFolio(folio);
     els.folioStatus.textContent = `Publicado ✔ Versión ${cfg.version}.`;
     alert('Publicado.\n\nComparte este link:\n' + location.origin + location.pathname + '?folio=' + encodeURIComponent(folio));
   }catch(e){
     els.folioStatus.textContent = 'Error: ' + (e?.message||e);
-    alert('Error al publicar: ' + (e?.message||e));
+    alert('Error al publicar: ' + (e?.message||e) + '\n\nSugerencias:\n- Reintenta con mejor señal\n- Revisa reglas de Storage\n- Tiempos de reintento extendidos a 120s');
   }
 });
 els.btnCargarFolio?.addEventListener('click', async ()=>{
@@ -1059,7 +1135,7 @@ function init(){
   renderHist();
   listenSession();
   loadPersistedCatalog();
-  bootFromFolioParam();           // ← si viene ?folio=... lo carga solo
+  bootFromFolioParam();           // si viene ?folio=... lo carga solo
 }
 init();
 </script>
