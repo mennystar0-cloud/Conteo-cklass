@@ -107,12 +107,22 @@
         <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
         <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico</button>
       </div>
-      <div class="mt-2">
+      <div class="mt-2 flex flex-wrap gap-2">
         <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (desde nube)</button>
+        <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia del folio (solo existencia)</button>
       </div>
 
       <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que en celular se cargue solo.</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
+
+      <!-- Historial por folio -->
+      <div class="bg-white rounded-2xl shadow p-4 mt-4">
+        <h3 class="font-semibold mb-2">Historial del folio (nube)</h3>
+        <div class="flex gap-2 mb-2">
+          <button id="btnRefrescarHistFolio" class="btn bg-gray-100">Refrescar</button>
+        </div>
+        <div id="histFolioList" class="overflow-auto max-h-64 border rounded-xl text-sm p-2 text-gray-700">—</div>
+      </div>
     </div>
   </section>
 
@@ -132,7 +142,7 @@
       </div>
 
       <div class="flex flex-wrap gap-2 mb-4">
-        <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar en histórico</button>
+        <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar en histórico (local)</button>
         <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
         <button id="btnAudio" class="btn bg-purple-600 text-white">Activar sonidos</button>
         <span id="lastStatus" class="badge bg-gray-100 text-gray-700">—</span>
@@ -255,6 +265,14 @@
       <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
       <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
       <div class="text-xs text-gray-500 mt-2">Se guarda en <code>localStorage</code>. Para multi-dispositivo, usa el mismo “Nombre del conteo” con Firebase configurado.</div>
+
+      <div class="mt-4">
+        <h3 class="font-semibold mb-2">Historial en nube (últimos cíclicos)</h3>
+        <div class="flex gap-2 mb-2">
+          <button id="btnRefrescarCloud" class="btn bg-gray-100">Refrescar</button>
+        </div>
+        <div id="cloudHist" class="overflow-auto max-h-[60vh] border rounded-xl"></div>
+      </div>
     </div>
   </section>
 
@@ -300,7 +318,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, onSnapshot, serverTimestamp,
-  query, orderBy, limit, doc, setDoc, getDoc, runTransaction
+  query, orderBy, limit, doc, setDoc, getDoc, runTransaction, getDocs
 } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 import {
   getStorage, ref, uploadBytes, getDownloadURL,
@@ -360,6 +378,7 @@ const els = {
   btnGenerarFolio: document.getElementById('btnGenerarFolio'),
   btnPublicarFolio: document.getElementById('btnPublicarFolio'),
   btnCargarFolio: document.getElementById('btnCargarFolio'),
+  btnActualizarExistencia: document.getElementById('btnActualizarExistencia'),
   folioStatus: document.getElementById('folioStatus'),
 
   // escanear
@@ -384,7 +403,11 @@ const els = {
   filtroMOD: document.getElementById('filtroMOD'), filtroCOLOR: document.getElementById('filtroCOLOR'), filtroTALLA: document.getElementById('filtroTALLA'), filtroTEMP: document.getElementById('filtroTEMP'),
 
   // historial
-  histList: document.getElementById('histList')
+  histList: document.getElementById('histList'),
+  cloudHist: document.getElementById('cloudHist'),
+  btnRefrescarCloud: document.getElementById('btnRefrescarCloud'),
+  btnRefrescarHistFolio: document.getElementById('btnRefrescarHistFolio'),
+  histFolioList: document.getElementById('histFolioList')
 };
 
 /* ---------------- HTTPS check ---------------- */
@@ -540,32 +563,76 @@ els.btnBorrarCatalogo.addEventListener('click', deletePersistedCatalog);
 /* ===== Existencia: archivo o pegado ===== */
 els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
 
-/* PEGADO de existencia robusto (incluye "000-24,NEGRO      220      4") */
+/* PEGADO de existencia robusto + confirmación */
 els.btnProcesarExistencia.addEventListener('click',()=>{
-  const acc = new Map(); const notFound = [];
+  const rawText = (els.existenciaInput.value || '')
+    .replace(/\uFEFF/g,'')           // BOM
+    .replace(/\u00A0/g,' ')           // NBSP
+    .replace(/\t+/g,' ')              // tabs -> espacios
+    .trim();
+
+  if (!rawText) { alert('No hay texto pegado.'); return; }
+
+  const lines = rawText.split(/\r?\n/).filter(l => l.trim().length);
+  const acc = new Map();
+  const avisos = [];
+  const notFound = [];
+  let parsed = 0;
+
   function addKey(key, qty=1){
     if(!key) return;
     acc.set(key, (acc.get(key)||0) + (qty||0));
     if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
   }
-  els.existenciaInput.value.split(/\r?\n/).forEach(raw=>{
-    let line = (raw||'').trim(); if(!line) return;
-    line = line.replace(/\s{2,}/g, ' ').replace(/\s*-\s*/g,'-'); // normaliza espacios y guiones
-    if(/^\d{6,}$/.test(line)){ const item = state.catalog.get(line); if(!item){ notFound.push(line); return; } addKey(toKey(item.MOD,item.COLOR,item.TALLA), 1); return; }
+
+  for (const raw of lines) {
+    let line = (raw||'').trim();
+    if (!line) continue;
+
+    // normalizaciones
+    line = line.replace(/\s{2,}/g, ' ')
+               .replace(/\s*-\s*/g,'-')
+               .replace(/;/g, ','); // CSV con ;
+
+    // Caso: solo código de barras
+    if(/^\d{6,}$/.test(line)){
+      const item = state.catalog.get(line);
+      if(!item){ notFound.push(line); continue; }
+      addKey(toKey(item.MOD,item.COLOR,item.TALLA), 1);
+      parsed++; continue;
+    }
+
+    // Formato 1: 000-24,NEGRO      220      4
     let m = line.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
-    if(m){ addKey(toKey(m[1].trim(), m[2].trim(), m[3].trim()), parseInt(m[4],10)||0); return; }
+    if(m){ addKey(toKey(m[1].trim(), m[2].trim(), m[3].trim()), parseInt(m[4],10)||0); parsed++; continue; }
+
+    // Formato 2: MOD|COLOR|TALLA[,CANT]
     m = line.match(/^([^|]+)\|([^|]+)\|([^\|,]+)(?:\s*,\s*(\d+))?$/);
-    if(m){ addKey(toKey(m[1],m[2],m[3]), parseInt(m[4]||'1',10)||1); return; }
+    if(m){ addKey(toKey(m[1],m[2],m[3]), parseInt(m[4]||'1',10)||1); parsed++; continue; }
+
+    // Formato 3: MOD, COLOR-TALLA[,CANT]
     m = line.match(/^([^,]+)\s*,\s*([^-\s][^-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/);
-    if(m){ addKey(toKey(m[1],m[2],m[3]), parseInt(m[4]||'1',10)||1); return; }
+    if(m){ addKey(toKey(m[1],m[2],m[3]), parseInt(m[4]||'1',10)||1); parsed++; continue; }
+
+    // Formato 4: CSV simple MOD,COLOR,TALLA,CANT
     const parts = line.split(',').map(s=>s.trim());
-    if(parts.length>=4){ const [MOD,COLOR,TALLA,CANT]=parts; if(MOD&&COLOR&&TALLA){ addKey(toKey(MOD,COLOR,TALLA), parseInt(CANT,10)||0); return; } }
-    notFound.push('FORMATO_NO_RECONOCIDO: '+line);
-  });
+    if(parts.length>=4){ const [MOD,COLOR,TALLA,CANT]=parts; if(MOD&&COLOR&&TALLA){ addKey(toKey(MOD,COLOR,TALLA), parseInt(CANT,10)||0); parsed++; continue; } }
+
+    avisos.push(line);
+  }
+
   state.existencia = acc;
-  els.existenciaStatus.textContent = `${state.existencia.size} claves agrupadas.` + (notFound.length?` Avisos: ${notFound.length}`:'');
   els.existenciaPreview.innerHTML = renderTable(state.existencia);
+  els.existenciaStatus.textContent = `${acc.size} claves agrupadas. (líneas: ${lines.length} / parseadas: ${parsed} / rechazadas: ${avisos.length + notFound.length})`;
+
   saveLocal();
+  refreshUI();
+
+  if (acc.size>0) {
+    alert(`Existencia cargada correctamente.\nClaves: ${acc.size}\nAvisos: ${avisos.length}\nNo en catálogo: ${notFound.length}`);
+  } else {
+    alert(`No se detectaron registros.\n\nRevisa el formato. Acepto:\n• 000-24,NEGRO      220      4\n• MOD|COLOR|TALLA[,CANT]\n• MOD,COLOR-TALLA[,CANT]\n• MOD,COLOR,TALLA,CANT\n• Solo código de barras (busca en catálogo)`);
+  }
 });
 
 /* Limpiar existencia (reseteo total) */
@@ -579,7 +646,7 @@ els.btnLimpiarExistencia.addEventListener('click', () => {
   refreshUI();
 });
 
-/* parseExistenciaCSV robusto (bug fijo) */
+/* parseExistenciaCSV robusto + confirmación */
 function parseExistenciaCSV(text){
   const textNorm = (text||'').replace(/\uFEFF/g,'').replace(/;/g, ',');
   const lines = textNorm.split(/\r?\n/).filter(l => l.trim().length);
@@ -654,6 +721,7 @@ function parseExistenciaCSV(text){
     els.existenciaCSVStatus.textContent = `${state.existencia.size} claves cargadas.`;
     els.existenciaStatus.textContent = `${state.existencia.size} claves agrupadas.`;
     els.existenciaPreview.innerHTML = renderTable(state.existencia);
+    alert(`Existencia CSV cargada.\nClaves: ${acc.size}`);
   } else {
     els.existenciaCSVStatus.textContent = `No se pudo leer el archivo de existencia.`;
     els.existenciaStatus.textContent = `0 registros.`;
@@ -709,20 +777,61 @@ async function uploadText(path, text){
   await uploadBytes(storageRef, blob);
   return await getDownloadURL(storageRef);
 }
+
+/** Guarda una entrada de historial para el folio con la versión y URLs subidas. */
+async function guardarHistorialFolio(folio, cfg, meta={}){
+  const refH = collection(db, 'ciclos', folio, 'historial');
+  await addDoc(refH, {
+    version: cfg.version,
+    catalogUrl: cfg.catalogUrl,
+    existenciaUrl: cfg.existenciaUrl,
+    ts: serverTimestamp(),
+    ...meta
+  });
+}
+
 async function publicarFolio(folio){
   folio = (folio||'').trim();
   if (!folio) throw new Error('Folio vacío.');
   if (!state.catalog.size) throw new Error('Carga primero el Catálogo.');
   if (!state.existencia.size) throw new Error('Carga o pega la Existencia.');
+
   const ver = Date.now();
   const catCSV = catalogToCSV();
   const exCSV  = mapToCSV(state.existencia, ['CLAVE','CANTIDAD']);
+
+  // Subidas a Storage
   const catUrl = await uploadText(`ciclos/${folio}/catalogo_${ver}.csv`, catCSV);
   const exUrl  = await uploadText(`ciclos/${folio}/existencia_${ver}.csv`, exCSV);
-  const cfg = { folio, version: ver, catalogUrl: catUrl, existenciaUrl: exUrl, ts: new Date().toISOString() };
-  await setDoc(doc(db, 'ciclos', folio), cfg);
+
+  // Documento principal del cíclico
+  const cfg = {
+    folio, version: ver, catalogUrl: catUrl, existenciaUrl: exUrl,
+    ts: new Date().toISOString(),
+    stats: { catalogSize: state.catalog.size, existenciaKeys: state.existencia.size }
+  };
+  await setDoc(doc(db, 'ciclos', folio), cfg, { merge: true });
+
+  // Snapshot/historial por versión (también guardamos dumps resumidos)
+  await setDoc(doc(db, 'ciclos', folio, 'snapshots', String(ver)), {
+    ...cfg,
+    catalogDump: [...state.catalog].slice(0, 1000),
+    existenciaDump: [...state.existencia]
+  });
+
+  // Confirmación
+  alert(
+    `Publicado correctamente.\n\n` +
+    `Folio: ${folio}\n` +
+    `Versión: ${ver}\n` +
+    `Catálogo: ${state.catalog.size} códigos\n` +
+    `Existencia (claves): ${state.existencia.size}\n\n` +
+    `Link para celulares:\n${location.origin}${location.pathname}?folio=${encodeURIComponent(folio)}`
+  );
+
   return cfg;
 }
+
 async function cargarDesdeFolio(folio){
   folio = (folio||'').trim(); if (!folio) throw new Error('Folio vacío.');
   const snap = await getDoc(doc(db, 'ciclos', folio));
@@ -757,11 +866,20 @@ els.btnPublicarFolio?.addEventListener('click', async ()=>{
       els.folioInput.value = folio;
     }
     const cfg = await publicarFolio(folio);
+
+    // Guarda en historial del folio (nube)
+    await guardarHistorialFolio(folio, cfg, {
+      operador: (els.metaOperador.value||'').trim(),
+      notas: (els.metaNotas.value||'').trim()
+    });
+
     els.folioStatus.textContent = `Publicado ✔ Versión ${cfg.version}.`;
-    alert('Publicado.\n\nComparte este link:\n' + location.origin + location.pathname + '?folio=' + encodeURIComponent(folio));
+    alert(`Cíclico publicado ✓\nFolio: ${folio}\nVersión: ${cfg.version}\n\nComparte este link:\n${location.origin}${location.pathname}?folio=${encodeURIComponent(folio)}`);
+
+    listarHistorialFolioUI();
   }catch(e){
     els.folioStatus.textContent = 'Error: ' + (e?.message||e);
-    alert('Error al publicar: ' + (e?.message||e) + '\n\nSugerencias:\n- Reintenta con mejor señal\n- Revisa reglas de Storage\n- Tiempos de reintento extendidos a 120s');
+    alert('Error al publicar: ' + (e?.message||e) + '\n\nSugerencias:\n- Reintenta con mejor señal\n- Revisa reglas de Storage\n- Tiempos de reintento extendidos');
   }
 });
 els.btnCargarFolio?.addEventListener('click', async ()=>{
@@ -770,11 +888,40 @@ els.btnCargarFolio?.addEventListener('click', async ()=>{
     const folio = els.folioInput.value;
     const cfg = await cargarDesdeFolio(folio);
     els.folioStatus.textContent = `Folio cargado ✔ Versión ${cfg.version}. Listo para escanear.`;
+    listarHistorialFolioUI();
   }catch(e){
     els.folioStatus.textContent = 'Error: ' + (e?.message||e);
     alert('Error al cargar folio: ' + (e?.message||e));
   }
 });
+
+/* Actualizar solo existencia del folio */
+els.btnActualizarExistencia?.addEventListener('click', async ()=>{
+  try{
+    const folio = (els.folioInput.value||'').trim();
+    if (!folio) return alert('Escribe o carga un folio primero.');
+    if (!state.existencia.size) return alert('No hay existencia cargada/pegada para actualizar.');
+
+    els.folioStatus.textContent = 'Actualizando existencia...';
+    const ver = Date.now();
+    const exCSV  = mapToCSV(state.existencia, ['CLAVE','CANTIDAD']);
+    const exUrl  = await uploadText(`ciclos/${folio}/existencia_${ver}.csv`, exCSV);
+
+    await setDoc(doc(db, 'ciclos', folio), { existenciaUrl: exUrl, version: ver, ts: new Date().toISOString() }, { merge: true });
+    await setDoc(doc(db, 'ciclos', folio, 'snapshots', String(ver)), {
+      folio, version: ver, existenciaUrl: exUrl, ts: new Date().toISOString(),
+      existenciaDump: [...state.existencia]
+    });
+
+    els.folioStatus.textContent = `Existencia actualizada ✔ Versión ${ver}`;
+    alert('Existencia actualizada para el folio ' + folio + '. Se recalcularán sobrantes/faltantes al generar reporte.');
+    listarHistorialFolioUI();
+  }catch(e){
+    els.folioStatus.textContent = 'Error: ' + (e?.message||e);
+    alert('Error al actualizar existencia: ' + (e?.message||e));
+  }
+});
+
 function getParam(name){ try{ return new URL(location.href).searchParams.get(name); }catch(_){ return null; } }
 async function bootFromFolioParam(){
   const folio = getParam('folio');
@@ -784,6 +931,7 @@ async function bootFromFolioParam(){
     els.folioStatus.textContent = 'Cargando folio desde URL...';
     const cfg = await cargarDesdeFolio(folio);
     els.folioStatus.textContent = `Folio cargado ✔ Versión ${cfg.version}.`;
+    listarHistorialFolioUI();
   }catch(e){
     els.folioStatus.textContent = 'Error: ' + (e?.message||e);
   }
@@ -1127,6 +1275,136 @@ els.btnNuevaSesion.addEventListener('click', ()=>{
   saveLocal(); setStatusOk('Sesión nueva lista');
 });
 
+/* ===== Historial en nube (todos los cíclicos) ===== */
+async function loadCloudHistory(limitN=50){
+  try{
+    const qRef = query(collection(db, 'ciclos'), orderBy('ts','desc'), limit(limitN));
+    const snap = await getDocs(qRef);
+    const rows = [];
+    snap.forEach(docSnap=>{
+      const d = docSnap.data();
+      rows.push(d);
+    });
+
+    if (!rows.length) {
+      els.cloudHist.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay cíclicos publicados.</div>';
+      return;
+    }
+    const html = `
+      <table class="min-w-full text-sm table">
+        <thead><tr>
+          <th class="text-left">Folio</th>
+          <th class="text-left">Versión</th>
+          <th class="text-left">Fecha</th>
+          <th class="text-right">#Catálogo</th>
+          <th class="text-right">#Existencia</th>
+          <th class="text-left">Acciones</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r=>`
+            <tr>
+              <td class="px-2 py-1 border-b">${r.folio||''}</td>
+              <td class="px-2 py-1 border-b">${r.version||''}</td>
+              <td class="px-2 py-1 border-b">${r.ts? new Date(r.ts).toLocaleString() : ''}</td>
+              <td class="px-2 py-1 border-b text-right">${r.stats?.catalogSize ?? '—'}</td>
+              <td class="px-2 py-1 border-b text-right">${r.stats?.existenciaKeys ?? '—'}</td>
+              <td class="px-2 py-1 border-b">
+                <button class="btn bg-blue-600 text-white" onclick="abrirFolioDesdeHist('${r.folio||''}')">Abrir</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+    els.cloudHist.innerHTML = html;
+  }catch(e){
+    els.cloudHist.innerHTML = '<div class="p-3 text-sm text-red-600">Error al cargar historial: '+(e?.message||e)+'</div>';
+  }
+}
+window.abrirFolioDesdeHist = async (folio)=>{
+  els.folioInput.value = folio;
+  try{
+    els.folioStatus.textContent = 'Cargando folio...';
+    const cfg = await cargarDesdeFolio(folio);
+    els.folioStatus.textContent = `Folio cargado ✔ Versión ${cfg.version}. Listo para escanear.`;
+    document.querySelector('[data-tab="escanear"]').click();
+    listarHistorialFolioUI();
+  }catch(e){
+    els.folioStatus.textContent = 'Error: ' + (e?.message||e);
+  }
+};
+els.btnRefrescarCloud?.addEventListener('click', ()=>loadCloudHistory());
+
+/* ===== Historial del folio (detalle versions) ===== */
+async function listarHistorialFolioUI(){
+  const folio = (els.folioInput.value||'').trim();
+  if (!folio) { els.histFolioList.innerHTML = 'Escribe o genera un folio.'; return; }
+  els.histFolioList.innerHTML = 'Cargando…';
+
+  try{
+    const ref = collection(db, 'ciclos', folio, 'historial');
+    const qy = query(ref, orderBy('ts','desc'), limit(50));
+    const snap = await getDocs(qy);
+    if (snap.empty) { els.histFolioList.innerHTML = 'Sin historial todavía.'; return; }
+
+    const rows = [];
+    snap.forEach(docu=>{
+      const d = docu.data();
+      const fecha = d.ts?.toDate?.()?.toLocaleString?.() || '—';
+      rows.push(`
+        <tr>
+          <td class="border-b px-2 py-1">${fecha}</td>
+          <td class="border-b px-2 py-1">${d.version||''}</td>
+          <td class="border-b px-2 py-1"><a class="underline" href="${d.catalogUrl||'#'}" target="_blank">cat</a></td>
+          <td class="border-b px-2 py-1"><a class="underline" href="${d.existenciaUrl||'#'}" target="_blank">exi</a></td>
+          <td class="border-b px-2 py-1">
+            <button class="btn bg-blue-600 text-white" onclick="window._abrirVersion('${encodeURIComponent(folio)}','${encodeURIComponent(d.version)}','${encodeURIComponent(d.catalogUrl||'')}','${encodeURIComponent(d.existenciaUrl||'')}')">Abrir</button>
+          </td>
+        </tr>
+      `);
+    });
+
+    els.histFolioList.innerHTML = `
+      <table class="min-w-full text-xs">
+        <thead><tr>
+          <th class="text-left px-2 py-1 border-b">Fecha</th>
+          <th class="text-left px-2 py-1 border-b">Versión</th>
+          <th class="text-left px-2 py-1 border-b">Catálogo</th>
+          <th class="text-left px-2 py-1 border-b">Existencia</th>
+          <th class="text-left px-2 py-1 border-b">Acción</th>
+        </tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>`;
+  }catch(e){
+    els.histFolioList.innerHTML = 'Error al cargar historial: ' + (e?.message||e);
+  }
+}
+window._abrirVersion = async (folioEnc, verEnc, catUrlEnc, exUrlEnc) => {
+  try{
+    const folio = decodeURIComponent(folioEnc);
+    const version = decodeURIComponent(verEnc);
+    const catUrl = decodeURIComponent(catUrlEnc);
+    const exUrl  = decodeURIComponent(exUrlEnc);
+
+    if (catUrl && catUrl!=='#') {
+      const t = await (await fetch(catUrl, {cache:'no-store'})).text();
+      const ok = procesarCatalogoDesdeTexto(t);
+      if (ok) await persistCatalog();
+    }
+    if (exUrl && exUrl!=='#') {
+      const t2 = await (await fetch(exUrl, {cache:'no-store'})).text();
+      parseExistenciaCSV(t2);
+    }
+    els.metaNombre.value = folio; // trabajar sobre el mismo folio
+    listenSession();
+    alert(`Versión ${version} abierta.\nPuedes volver a pegar nueva existencia y generar reporte.`);
+    document.querySelector('[data-tab="escanear"]').click();
+  }catch(e){
+    alert('No se pudo abrir la versión: ' + (e?.message||e));
+  }
+};
+els.btnRefrescarHistFolio?.addEventListener('click', listarHistorialFolioUI);
+els.folioInput?.addEventListener('change', listarHistorialFolioUI);
+
 /* ===== Init ===== */
 function init(){
   loadLocal();
@@ -1135,7 +1413,9 @@ function init(){
   renderHist();
   listenSession();
   loadPersistedCatalog();
-  bootFromFolioParam();           // si viene ?folio=... lo carga solo
+  bootFromFolioParam();
+  loadCloudHistory();
+  listarHistorialFolioUI();
 }
 init();
 </script>
