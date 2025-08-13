@@ -521,6 +521,7 @@ els.btnProcesarExistencia.addEventListener('click',()=>{
   }
   els.existenciaInput.value.split(/\r?\n/).forEach(raw=>{
     let line = (raw||'').trim(); if(!line) return;
+    line = line.replace(/\s{2,}/g, ' ').replace(/\s*-\s*/g,'-'); // normaliza espacios y guiones
     if(/^\d{6,}$/.test(line)){ const item = state.catalog.get(line); if(!item){ notFound.push(line); return; } addKey(toKey(item.MOD,item.COLOR,item.TALLA), 1); return; }
     let m = line.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
     if(m){ addKey(toKey(m[1].trim(), m[2].trim(), m[3].trim()), parseInt(m[4],10)||0); return; }
@@ -537,43 +538,101 @@ els.btnProcesarExistencia.addEventListener('click',()=>{
   els.existenciaPreview.innerHTML = renderTable(state.existencia);
   saveLocal();
 });
-els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
+/* >>>>>>>>>>>>>>> PARCHE: Limpiar existencia (reseteo total) <<<<<<<<<<<<<<< */
+els.btnLimpiarExistencia.addEventListener('click', () => {
+  els.existenciaInput.value = '';
+  state.existencia = new Map();
+  els.existenciaPreview.innerHTML = '';
+  els.existenciaStatus.textContent = '0 registros.';
+  els.existenciaCSVStatus.textContent = 'Sin cargar.';
+  saveLocal();
+  refreshUI();
+});
+
+/* >>>>>>>>>>>>>>> PARCHE: parseExistenciaCSV robusto (bug fijo) <<<<<<<<<<<<<<< */
 function parseExistenciaCSV(text){
-  const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return;
-  const cols=splitCSVLine(lines[0]).map(x=>norm(x).toUpperCase());
-  const hasHeader = cols.includes('MOD') || cols.includes('CODIGO-COLOR-TALLA') || cols.includes('CANTIDAD') || cols.includes('QTY') || cols.includes('STOCK') || cols.includes('EXISTENCIA');
-  const acc=new Map();
-  if (hasHeader){
-    lines.shift();
-    const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA')};
-    let idxCant = cols.indexOf('CANTIDAD'); if(idxCant<0) idxCant = cols.indexOf('QTY'); if(idxCant<0) idxCant = cols.indexOf('STOCK'); if(idxCant<0) idxCant = cols.indexOf('EXISTENCIA');
-    for(const line of lines){
-      const p=splitCSVLine(line);
-      let key=''; let qty=1; if(idxCant>=0) qty=parseInt((p[idxCant]||'1').trim(),10)||0;
-      if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA||'']); }
-      else if(idx.KEY>=0 && p[idx.KEY]){
-        const raw=p[idx.KEY].trim();
-        if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); }
-        else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); }
+  const textNorm = (text||'').replace(/\uFEFF/g,'').replace(/;/g, ',');
+  const lines = textNorm.split(/\r?\n/).filter(l => l.trim().length);
+  if (!lines.length) { els.existenciaCSVStatus.textContent = 'Archivo vacío.'; return; }
+
+  const header = splitCSVLine(lines[0]).map(x => norm(x).toUpperCase());
+  const idxKEY   = findCol(header, ['CODIGO-COLOR-TALLA','CLAVE','KEY']);
+  const idxMOD   = findCol(header, ['MOD','MODELO','SKU','ARTICULO','ITEM','REFERENCIA']);
+  const idxCOLOR = findCol(header, ['COLOR','COL','CLR']);
+  const idxTALLA = findCol(header, ['TALLA','SIZE','NUMERACION']);
+  let   idxCANT  = findCol(header, ['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']);
+
+  const acc = new Map();
+
+  if (idxKEY >= 0 || (idxMOD >= 0 && idxCOLOR >= 0 && idxTALLA >= 0)) {
+    lines.shift(); // consume encabezado
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const p = splitCSVLine(line).map(norm);
+      let key = '';
+
+      if (idxMOD >= 0 && idxCOLOR >= 0 && idxTALLA >= 0) {
+        const MOD = p[idxMOD] || '';
+        const COLOR = p[idxCOLOR] || '';
+        const TALLA = p[idxTALLA] || ''; // <-- fix real
+        key = toKey(MOD, COLOR, TALLA);
+      } else if (idxKEY >= 0 && p[idxKEY]) {
+        const raw = p[idxKEY].trim();
+        if (raw.includes('|')) {
+          const [m,c,t] = raw.split('|').map(norm);
+          key = toKey(m,c,t);
+        } else if (raw.includes(',')) {
+          const [m, tail] = raw.split(',');
+          const [c, t] = (tail||'').split('-');
+          key = toKey(m,c,t);
+        } else if (raw.includes('-')) {
+          const [m,c,t] = raw.split('-').map(norm);
+          key = toKey(m,c,t);
+        }
       }
-      if(!key) continue;
-      acc.set(key,(acc.get(key)||0)+(qty||0));
-      if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
+
+      let qty = 1;
+      if (idxCANT >= 0) qty = parseInt(p[idxCANT]||'1', 10) || 0;
+
+      if (!key) continue;
+      acc.set(key, (acc.get(key)||0) + qty);
+      if (!state.keyMeta.has(key)) {
+        const [M,C,T] = key.split('|');
+        state.keyMeta.set(key, { MOD:M, COLOR:C, TALLA:T, TEMPORADA:'' });
+      }
     }
   } else {
-    for (const raw of lines){
-      const line = (raw||'').trim(); if(!line) continue;
+    // Fallback sin encabezado: "000-24,NEGRO      220      4"
+    for (const raw of lines) {
+      const line = (raw||'').trim();
+      if (!line) continue;
       let m = line.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
-      if(m){
-        const key = toKey(m[1], m[2], m[3]); const qty = parseInt(m[4],10)||0;
-        acc.set(key, (acc.get(key)||0)+qty);
-        if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
+      if (m) {
+        const key = toKey(m[1], m[2], m[3]);
+        const qty = parseInt(m[4],10) || 0;
+        acc.set(key, (acc.get(key)||0) + qty);
+        if (!state.keyMeta.has(key)) {
+          const [M,C,T] = key.split('|');
+          state.keyMeta.set(key, { MOD:M, COLOR:C, TALLA:T, TEMPORADA:'' });
+        }
       }
     }
   }
-  if (acc.size) { state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`; }
-  else { els.existenciaCSVStatus.textContent=`No se pudo leer el archivo de existencia.`; }
+
+  if (acc.size) {
+    state.existencia = acc;
+    els.existenciaCSVStatus.textContent = `${state.existencia.size} claves cargadas.`;
+    els.existenciaStatus.textContent = `${state.existencia.size} claves agrupadas.`;
+    els.existenciaPreview.innerHTML = renderTable(state.existencia);
+  } else {
+    els.existenciaCSVStatus.textContent = `No se pudo leer el archivo de existencia.`;
+    els.existenciaStatus.textContent = `0 registros.`;
+    els.existenciaPreview.innerHTML = '';
+  }
+
+  saveLocal();
+  refreshUI();
 }
 
 /* ===== Folio: publicar/cargar (Firestore + Storage) ===== */
@@ -993,7 +1052,6 @@ els.btnNuevaSesion.addEventListener('click', ()=>{
 });
 
 /* ===== Init ===== */
-async function bootFromFolioParam(){ /* definida arriba */ }
 function init(){
   loadLocal();
   refreshUI();
