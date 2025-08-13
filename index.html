@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Conteo CKLASS – PWA con Firestore</title>
+<title>Conteo CKLASS – Catálogo fijo + Existencias por cíclico</title>
 <meta name="theme-color" content="#1877F2" />
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" />
@@ -31,8 +31,8 @@
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
-    <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
-    <p class="text-sm text-gray-600">Importar → Escanear → Reporte → Historial. (HTTPS/localhost para cámara)</p>
+    <h1 class="text-2xl font-bold">Módulo de Conteo – CKLASS</h1>
+    <p class="text-sm text-gray-600">Catálogo fijo (una sola vez) → Cargar existencia por cíclico → Escanear → Cruce en tiempo real.</p>
   </header>
 
   <!-- Tabs -->
@@ -48,34 +48,43 @@
   <!-- Importar -->
   <section id="tab-importar" class="tab-pane block">
     <div class="grid md:grid-cols-2 gap-4">
+      <!-- Catálogo -->
       <div class="bg-white rounded-2xl shadow p-4">
-        <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Columnas: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code></p>
+        <h2 class="font-semibold mb-2">Catálogo maestro (una sola vez)</h2>
+        <p class="text-xs text-gray-600 mb-2">
+          Columnas sugeridas: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code><br/>
+          Se guarda en el dispositivo (IndexedDB). Solo lo cambias cuando haya actualización.
+        </p>
         <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="catalogoStatus" class="text-xs text-gray-600">Sin cargar.</div>
+
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar catálogo guardado</button>
+          <button id="btnFijarCatalogo" class="btn bg-blue-600 text-white">Fijar como predeterminado</button>
+          <button id="btnBorrarCatalogo" class="btn bg-red-600 text-white">Borrar guardado</button>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <input id="catalogoURL" class="border rounded p-2 text-xs flex-1" placeholder="URL CSV (GitHub/Firebase Storage)"/>
+          <button id="btnCargarCatalogoURL" class="btn bg-gray-100">Cargar URL</button>
+        </div>
+        <div id="catalogoGuardadoStatus" class="text-xs text-gray-600 mt-1">—</div>
       </div>
 
+      <!-- Existencia -->
       <div class="bg-white rounded-2xl shadow p-4">
-        <h2 class="font-semibold mb-2">Existencia física (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Formato: <code>MOD,COLOR,TALLA,CANTIDAD</code> o <code>CODIGO-COLOR-TALLA,CANTIDAD</code></p>
+        <h2 class="font-semibold mb-2">Existencia (por cíclico)</h2>
+        <p class="text-xs text-gray-600 mb-2">
+          Formatos soportados: <code>MOD,COLOR,TALLA,CANTIDAD</code> o <code>CODIGO-COLOR-TALLA,CANTIDAD</code><br/>
+          Se usa para cruce en tiempo real (escaneados vs existencia).
+        </p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
-      </div>
-    </div>
 
-    <div class="bg-white rounded-2xl shadow p-4 mt-4">
-      <h3 class="font-semibold mb-2">Pegar existencia (opcional)</h3>
-      <textarea id="existenciaInput" rows="5" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Líneas: MOD,COLOR-TALLA | MOD|COLOR|TALLA | CODIGO_BARRA"></textarea>
-      <div class="flex gap-2 mt-2">
-        <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
-        <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
+        <div class="bg-gray-50 rounded-xl p-3 mt-3">
+          <h3 class="font-semibold mb-2 text-sm">Vista previa existencia agrupada</h3>
+          <div id="existenciaPreview" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
       </div>
-      <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
-    </div>
-
-    <div class="bg-white rounded-2xl shadow p-4 mt-4">
-      <h3 class="font-semibold mb-2">Vista previa existencia agrupada</h3>
-      <div id="existenciaPreview" class="overflow-auto max-h-64 border rounded-xl"></div>
     </div>
   </section>
 
@@ -92,10 +101,11 @@
       </div>
 
       <div class="flex flex-wrap gap-2 mb-4">
-        <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar en histórico</button>
-        <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
         <button id="btnAudio" class="btn bg-purple-600 text-white">Activar sonidos</button>
         <span id="lastStatus" class="badge bg-gray-100 text-gray-700">—</span>
+        <span class="badge bg-blue-100 text-blue-700" id="contadorEsc">Escaneados: 0</span>
+        <span class="badge bg-amber-100 text-amber-700" id="contadorSobr">Sobrantes: 0</span>
+        <span class="badge bg-rose-100 text-rose-700" id="contadorFalt">Faltantes: 0</span>
       </div>
 
       <p class="text-xs text-gray-600 mb-3">HTTPS/localhost. Si no detecta, cambia a Quagga2. Usa Registro manual si no hay código o hay cantidad.</p>
@@ -108,7 +118,6 @@
           <div class="flex flex-wrap gap-2 mb-4">
             <button id="btnUndo" class="btn bg-gray-100">Deshacer</button>
             <button id="btnResetEscaneo" class="btn bg-gray-100">Reiniciar</button>
-            <button id="btnCargarPruebaEscaneo" class="btn bg-gray-100">Prueba</button>
           </div>
 
           <div class="border-t pt-3 mt-2">
@@ -138,7 +147,6 @@
             <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
             <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
             <button id="btnTorch" class="btn bg-gray-100">Linterna</button>
-            <button id="btnFullscreen" class="btn bg-gray-100">Pantalla completa</button>
           </div>
           <div class="text-xs" id="httpsStatus"></div>
 
@@ -163,12 +171,7 @@
           <div id="liveFeed" class="overflow-auto max-h-64 border rounded-xl">
             <table class="min-w-full text-xs table">
               <thead>
-                <tr>
-                  <th class="text-left">Hora</th>
-                  <th class="text-left">Clave</th>
-                  <th class="text-left">Operador</th>
-                  <th class="text-left">Dispositivo</th>
-                </tr>
+                <tr><th>Hora</th><th>Clave</th><th>Operador</th><th>Dispositivo</th></tr>
               </thead>
               <tbody id="liveFeedBody"></tbody>
             </table>
@@ -183,7 +186,7 @@
   <!-- Reporte -->
   <section id="tab-reporte" class="tab-pane hidden">
     <div class="bg-white rounded-2xl shadow p-4">
-      <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
+      <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia) – en tiempo real</h2>
       <div class="flex flex-wrap gap-2 mb-3 no-print">
         <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
         <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
@@ -220,13 +223,17 @@
   <section id="tab-historial" class="tab-pane hidden">
     <div class="bg-white rounded-2xl shadow p-4">
       <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
+      <div class="flex flex-wrap gap-2 mb-2">
+        <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar en histórico</button>
+        <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
+      </div>
       <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
-      <div class="text-xs text-gray-500 mt-2">Se guarda en <code>localStorage</code>. Para multi-dispositivo, usa el mismo “Nombre del conteo” con Firebase configurado.</div>
+      <div class="text-xs text-gray-500 mt-2">El catálogo se mantiene fijo en el dispositivo (IndexedDB). La existencia se carga por cíclico.</div>
     </div>
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Local keys: <code>conteo_cklass_v01</code>, <code>conteo_cklass_hist</code>.
+    Local keys: <code>conteo_cklass_v01</code>, <code>conteo_cklass_hist</code>. Catálogo persistido en IndexedDB.
   </footer>
 </div>
 
@@ -262,11 +269,11 @@
   } catch (e) { console.error('Tabs error', e); }
 })();
 
-/* ---------------- Firebase (CDN v12.1.0) ---------------- */
+/* ---------------- Firebase (CDN v12.1.0) — Opcional ---------------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
-/* >>>>>>>>>>>> CONFIG REAL (tomada de tu mensaje) <<<<<<<<<<<<< */
+/* >>>>>>>>>>>> CONFIG FIREBASE (tu proyecto) — puedes dejarlo o comentarlo <<<<<<<<<<<<< */
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
   authDomain: "cklass-conteo.firebaseapp.com",
@@ -276,42 +283,51 @@ const firebaseConfig = {
   appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
   measurementId: "G-45LC81EE44"
 };
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-console.log("Firebase listo");
+let app=null, db=null;
+try { app = initializeApp(firebaseConfig); db = getFirestore(app); console.log("Firebase listo"); } catch(_) { console.warn("Firebase desactivado (config no válida o comentada)."); }
 
 /* ---------------- Estado/refs ---------------- */
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
-const state = { catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
-let SCAN_PAUSED = false;             /* ⚠️ SOLO UNA VEZ */
+const state = {
+  catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(),     // catálogo fijo
+  existencia:new Map(),                                           // existencia por cíclico
+  scans:[], groupedScans:new Map()                                // escaneos de la sesión
+};
+let SCAN_PAUSED = false;
 const deviceId = (localStorage.getItem('conteo_device_id') || (crypto.randomUUID?.() || String(Math.random()).slice(2)));
 localStorage.setItem('conteo_device_id', deviceId);
 const processedNonces = new Set();
 
+const $ = (id)=>document.getElementById(id);
 const els = {
-  fileCatalogo: document.getElementById('fileCatalogo'), catalogoStatus:document.getElementById('catalogoStatus'),
-  fileExistenciaCSV: document.getElementById('fileExistenciaCSV'), existenciaCSVStatus:document.getElementById('existenciaCSVStatus'),
-  existenciaInput: document.getElementById('existenciaInput'), btnProcesarExistencia:document.getElementById('btnProcesarExistencia'), btnLimpiarExistencia:document.getElementById('btnLimpiarExistencia'),
-  existenciaStatus: document.getElementById('existenciaStatus'), existenciaPreview: document.getElementById('existenciaPreview'),
-  scanInput: document.getElementById('scanInput'), scanLog: document.getElementById('scanLog'), scanGrouped: document.getElementById('scanGrouped'),
-  btnUndo: document.getElementById('btnUndo'), btnResetEscaneo: document.getElementById('btnResetEscaneo'), btnCargarPruebaEscaneo: document.getElementById('btnCargarPruebaEscaneo'),
-  cameraSelect: document.getElementById('cameraSelect'), engineSelect: document.getElementById('engineSelect'),
-  btnSolicitarPermisos:document.getElementById('btnSolicitarPermisos'),
-  btnCamStart: document.getElementById('btnCamStart'), btnCamStop:document.getElementById('btnCamStop'), btnFullscreen:document.getElementById('btnFullscreen'),
-  btnTorch: document.getElementById('btnTorch'), btnTogglePause: document.getElementById('btnTogglePause'),
-  httpsStatus:document.getElementById('httpsStatus'), videoCam:document.getElementById('videoCam'), diag: document.getElementById('diag'),
-  btnGenerarReporte: document.getElementById('btnGenerarReporte'), btnExportarCSV:document.getElementById('btnExportarCSV'), btnRespaldarJSON:document.getElementById('btnRespaldarJSON'),
-  tablaEscaneados: document.getElementById('tablaEscaneados'), tablaSobrantes:document.getElementById('tablaSobrantes'), tablaFaltantes:document.getElementById('tablaFaltantes'),
-  filtroMOD: document.getElementById('filtroMOD'), filtroCOLOR: document.getElementById('filtroCOLOR'), filtroTALLA: document.getElementById('filtroTALLA'), filtroTEMP: document.getElementById('filtroTEMP'),
-  chkAuto: document.getElementById('chkAuto'), chkBeep: document.getElementById('chkBeep'),
-  quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea'),
-  manualClave: document.getElementById('manualClave'), manualQty: document.getElementById('manualQty'), btnManual: document.getElementById('btnManual'),
-  lastStatus: document.getElementById('lastStatus'), btnAudio: document.getElementById('btnAudio'),
-  metaNombre: document.getElementById('metaNombre'), metaOperador: document.getElementById('metaOperador'), metaNotas: document.getElementById('metaNotas'),
-  btnGuardarHistorico: document.getElementById('btnGuardarHistorico'), btnNuevaSesion: document.getElementById('btnNuevaSesion'),
-  histList: document.getElementById('histList'),
-  liveFeedBody: document.getElementById('liveFeedBody')
+  // importar
+  fileCatalogo: $('fileCatalogo'), catalogoStatus:$('catalogoStatus'),
+  existenciaPreview:$('existenciaPreview'), existenciaCSVStatus:$('existenciaCSVStatus'),
+  // catálogo fijo
+  btnUsarCatalogoGuardado:$('btnUsarCatalogoGuardado'), btnFijarCatalogo:$('btnFijarCatalogo'),
+  btnBorrarCatalogo:$('btnBorrarCatalogo'), catalogoURL:$('catalogoURL'),
+  btnCargarCatalogoURL:$('btnCargarCatalogoURL'), catalogoGuardadoStatus:$('catalogoGuardadoStatus'),
+  // escanear
+  scanInput:$('scanInput'), scanLog:$('scanLog'), scanGrouped:$('scanGrouped'),
+  manualClave:$('manualClave'), manualQty:$('manualQty'), btnManual:$('btnManual'),
+  btnUndo:$('btnUndo'), btnResetEscaneo:$('btnResetEscaneo'),
+  cameraSelect:$('cameraSelect'), engineSelect:$('engineSelect'),
+  btnSolicitarPermisos:$('btnSolicitarPermisos'), btnCamStart:$('btnCamStart'), btnCamStop:$('btnCamStop'),
+  btnTogglePause:$('btnTogglePause'), btnTorch:$('btnTorch'),
+  httpsStatus:$('httpsStatus'), videoCam:$('videoCam'), quaggaArea:$('quaggaArea'), quaggaOverlay:$('quaggaOverlay'),
+  chkAuto:$('chkAuto'), chkBeep:$('chkBeep'), diag:$('diag'), btnAudio:$('btnAudio'),
+  // meta
+  metaNombre:$('metaNombre'), metaOperador:$('metaOperador'), metaNotas:$('metaNotas'),
+  // reporte
+  filtroMOD:$('filtroMOD'), filtroCOLOR:$('filtroCOLOR'), filtroTALLA:$('filtroTALLA'), filtroTEMP:$('filtroTEMP'),
+  btnGenerarReporte:$('btnGenerarReporte'), btnExportarCSV:$('btnExportarCSV'), btnRespaldarJSON:$('btnRespaldarJSON'),
+  tablaEscaneados:$('tablaEscaneados'), tablaSobrantes:$('tablaSobrantes'), tablaFaltantes:$('tablaFaltantes'),
+  // historial
+  btnGuardarHistorico:$('btnGuardarHistorico'), btnNuevaSesion:$('btnNuevaSesion'), histList:$('histList'),
+  // contadores
+  lastStatus:$('lastStatus'), contadorEsc:$('contadorEsc'), contadorSobr:$('contadorSobr'), contadorFalt:$('contadorFalt'),
+  // live feed
+  liveFeedBody:$('liveFeedBody')
 };
 
 /* ---------------- HTTPS check ---------------- */
@@ -331,58 +347,122 @@ function playOk(){ if(!els.chkBeep.checked) return; playTone(1200, 90, 'square',
 function playErr(){ playTone(220, 140, 'sawtooth', 0.10); }
 function buzz(pattern=[120]){ if (navigator.vibrate) navigator.vibrate(pattern); }
 els.btnAudio.addEventListener('click', initAudio);
-const _unlock = ()=>{ initAudio(); document.removeEventListener('click', _unlock); document.removeEventListener('keydown', _unlock); };
-document.addEventListener('click', _unlock, { once:true });
-document.addEventListener('keydown', _unlock, { once:true });
+document.addEventListener('click', ()=>audioReady||initAudio(), { once:true });
 
-/* ---------------- Utilidades ---------------- */
+/* ---------------- Utilidades generales ---------------- */
 const toKey = (mod, color, talla) => `${(mod||'').trim()}|${(color||'').trim()}|${(talla||'').trim()}`.toUpperCase();
-function parseLine(line){ line=line.trim(); if(!line) return null;
-  if(/^\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item) return {type:'BC_NO_ENCONTRADO', raw:line}; return {type:'KEY', key:toKey(item.MOD,item.COLOR,item.TALLA)}; }
-  if(line.includes('|')){ const [m,c,t]=line.split('|').map(s=>s.trim()); if(!m||!c||!t) return null; return {type:'KEY', key:toKey(m,c,t)}; }
-  if(line.includes(',')){ const [mod,tail]=line.split(','); if(!mod||!tail) return null; if(tail.includes('-')){const [color,talla]=tail.split('-'); return {type:'KEY', key:toKey(mod,color,talla)};}
-  }
-  return null;
-}
 function renderTable(map, headers=['Clave','Cantidad']){
   const rows=[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
   return ['<table class="min-w-full text-sm">', `<thead><tr>${headers.map(h=>`<th class="text-left px-2 py-1 border-b">${h}</th>`).join('')}</tr></thead>`, '<tbody>',
     ...rows.map(([k,v])=>`<tr><td class="px-2 py-1 border-b">${k}</td><td class="px-2 py-1 border-b">${v}</td></tr>`), '</tbody></table>'].join('');
 }
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs table"><thead><tr><th>#</th><th>Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td>${last.length-i}</td><td>${x}</td></tr>`), '</tbody></table>'].join(''); }
-function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
-function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
-function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
-function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
+function group(list){ const m=new Map(); for(const k of list) m.set(k,(m.get(k)||0)+1); return m; }
 function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
+function updateCounters(){
+  const esc = state.groupedScans;
+  let sobr=0, falt=0;
+  const keys = new Set([...esc.keys(), ...state.existencia.keys()]);
+  keys.forEach(k=>{ const e=esc.get(k)||0, x=state.existencia.get(k)||0; if (e>x) sobr += (e-x); if (x>e) falt += (x-e); });
+  els.contadorEsc.textContent = `Escaneados: ${state.scans.length}`;
+  els.contadorSobr.textContent = `Sobrantes: ${sobr}`;
+  els.contadorFalt.textContent = `Faltantes: ${falt}`;
+}
 
-/* ---------------- Importar ---------------- */
-fileCatalogo.addEventListener('change', async (e)=>{
-  const text=await e.target.files?.[0]?.text(); if(!text) return;
-  const lines=text.split(/\r?\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
-  const idx={BC:cols.indexOf('CODIGO_BARRA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), TEMP:cols.indexOf('TEMPORADA')};
-  for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue;
-    const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim();
-    const key=toKey(MOD,COLOR,TALLA);
-    state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
-    if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]);
-    state.indexByKey.get(key).push(bc);
-    if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+/* ---------------- CSV helpers (robustos) ---------------- */
+function splitCSVLine(line) {
+  const result = []; let current = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } else { inQuotes = !inQuotes; } }
+    else if (ch === ',' && !inQuotes) { result.push(current); current = ''; }
+    else { current += ch; }
   }
-  els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
+  result.push(current);
+  return result;
+}
+function norm(s){ return (s==null?'':String(s)).replace(/^\uFEFF/,'').trim(); }
+function findCol(cols, candidates) {
+  const map = new Map(cols.map((c,i)=>[c.trim().toUpperCase(), i]));
+  for (const name of candidates) { const i = map.get(name.toUpperCase()); if (i !== undefined) return i; }
+  return -1;
+}
+
+/* ---------------- Importar CATÁLOGO (archivo o URL) ---------------- */
+function procesarCatalogoDesdeTexto(text){
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length>0);
+  if (!lines.length) { els.catalogoStatus.textContent = 'Archivo vacío.'; return false; }
+  const header = splitCSVLine(lines.shift()).map(x => norm(x).toUpperCase());
+
+  const idxBC    = findCol(header, ['CODIGO_BARRA','CODIGOBARRA','CODIGO','EAN','UPC','BARRA','BARRAS','COD_BARRAS','CODBAR','BARCODE']);
+  const idxMOD   = findCol(header, ['MOD','MODELO','SKU','ARTICULO','ITEM','REFERENCIA']);
+  const idxCOLOR = findCol(header, ['COLOR','COL','CLR']);
+  const idxTALLA = findCol(header, ['TALLA','SIZE','NUMERACION']);
+  const idxTEMP  = findCol(header, ['TEMPORADA','TEMP','TEMPORALIDAD','SEASON']);
+  if (idxBC === -1) { alert('No se encontró columna de CÓDIGO DE BARRAS.'); return false; }
+
+  state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
+
+  let conClave = 0, soloBC = 0;
+  for (const line of lines) {
+    const parts = splitCSVLine(line);
+    const bc   = norm(parts[idxBC]); if (!bc) continue;
+    const MOD   = idxMOD   >= 0 ? norm(parts[idxMOD])   : '';
+    const COLOR = idxCOLOR >= 0 ? norm(parts[idxCOLOR]) : '';
+    const TALLA = idxTALLA >= 0 ? norm(parts[idxTALLA]) : '';
+    const TEMP  = idxTEMP  >= 0 ? norm(parts[idxTEMP])  : '';
+
+    state.catalog.set(bc, { MOD, COLOR, TALLA, TEMPORADA: TEMP });
+
+    if (MOD || COLOR || TALLA) {
+      const key = `${MOD.toUpperCase()}|${COLOR.toUpperCase()}|${TALLA.toUpperCase()}`;
+      if (!state.indexByKey.has(key)) state.indexByKey.set(key, []);
+      state.indexByKey.get(key).push(bc);
+      if (!state.keyMeta.has(key)) state.keyMeta.set(key, { MOD, COLOR, TALLA, TEMPORADA: TEMP });
+      conClave++;
+    } else { soloBC++; }
+  }
+
+  els.catalogoStatus.textContent =
+    `${state.catalog.size} códigos cargados. ` +
+    (conClave ? `${conClave} con clave MOD|COLOR|TALLA. ` : '') +
+    (soloBC ? `${soloBC} solo con BC.` : '');
+
+  saveLocal(); refreshUI();
+  return true;
+}
+els.fileCatalogo.addEventListener('change', async (e)=>{
+  const f = e.target.files?.[0]; if(!f) return;
+  const text = await f.text();
+  const ok = procesarCatalogoDesdeTexto(text);
+  if (ok) els.catalogoGuardadoStatus.textContent='Catálogo cargado (no persistido aún).';
 });
-fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
+els.btnCargarCatalogoURL.addEventListener('click', async ()=>{
+  const url = els.catalogoURL.value.trim(); if (!url) return alert('URL vacío.');
+  try{
+    const resp = await fetch(url, { cache:'no-store' });
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const text = await resp.text();
+    const ok = procesarCatalogoDesdeTexto(text);
+    if (ok) els.catalogoGuardadoStatus.textContent='Catálogo cargado desde URL (no persistido aún).';
+  }catch(e){ alert('No se pudo descargar el CSV: '+(e?.message||e)); }
+});
+
+/* ---------------- Importar EXISTENCIA (por cíclico) ---------------- */
 function parseExistenciaCSV(text){
   const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return;
-  const cols=lines.shift().split(',').map(x=>x.trim().toUpperCase());
-  const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), CANT:cols.indexOf('CANTIDAD')};
+  const header = splitCSVLine(lines.shift()).map(x => norm(x).toUpperCase());
+  const idx={KEY:header.indexOf('CODIGO-COLOR-TALLA'),
+             MOD:findCol(header,['MOD','MODELO','SKU']),
+             COLOR:findCol(header,['COLOR','COL','CLR']),
+             TALLA:findCol(header,['TALLA','SIZE','NUMERACION']),
+             CANT:findCol(header,['CANTIDAD','QTY','CANT','EXISTENCIA','STOCK'])};
   const acc=new Map();
   for(const line of lines){
-    const p=line.split(',');
+    const p=splitCSVLine(line);
     let key=''; let qty=1; if(idx.CANT>=0) qty=parseInt((p[idx.CANT]||'1').trim(),10)||0;
-    if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA||'']); }
+    if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA]||''); }
     else if(idx.KEY>=0 && p[idx.KEY]){
       const raw=p[idx.KEY].trim();
       if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); }
@@ -392,28 +472,31 @@ function parseExistenciaCSV(text){
     acc.set(key,(acc.get(key)||0)+(qty||0));
     if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
   }
-  state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
+  state.existencia=acc;
+  els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
+  els.existenciaPreview.innerHTML = renderTable(state.existencia);
+  refreshUI(); updateCounters();
 }
+$('fileExistenciaCSV').addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); });
 
-/* ---------------- Pegar existencia ---------------- */
-btnProcesarExistencia.addEventListener('click',()=>{
-  const keys=[]; const notFound=[];
-  existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
-  state.existencia=group(keys); existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
-});
-btnLimpiarExistencia.addEventListener('click',()=>{ existenciaInput.value=''; state.existencia.clear(); existenciaPreview.innerHTML=''; existenciaStatus.textContent='0 registros.'; saveLocal(); });
-
-/* ---------------- Escaneo/Manual ---------------- */
-scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
+/* ---------------- Entrada / Escaneo ---------------- */
+function parseLine(line){ line=line.trim(); if(!line) return null;
+  if(/^\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item) return {type:'BC_NO_ENCONTRADO', raw:line}; return {type:'KEY', key:toKey(item.MOD,item.COLOR,item.TALLA)}; }
+  if(line.includes('|')){ const [m,c,t]=line.split('|').map(s=>s.trim()); if(!m||!c||!t) return null; return {type:'KEY', key:toKey(m,c,t)}; }
+  if(line.includes(',')){ const [mod,tail]=line.split(','); if(!mod||!tail) return null; if(tail.includes('-')){const [color,talla]=tail.split('-'); return {type:'KEY', key:toKey(mod,color,talla)};}
+  }
+  return null;
+}
+els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){
   const p=parseLine(line);
   if(!p){ setStatusErr('Entrada inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
   if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+p.raw); return; }
   if(p.type==='KEY'){ registerKey(p.key); }
 }
-btnManual.addEventListener('click', ()=>{
-  const clave = (manualClave.value||'').trim();
-  let qty = parseInt((manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
+els.btnManual.addEventListener('click', ()=>{
+  const clave = (els.manualClave.value||'').trim();
+  let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
   if(!clave){ setStatusErr('Entrada vacía'); playErr(); buzz([70]); return; }
   if(/^\d{6,}$/.test(clave)){
     const item = state.catalog.get(clave);
@@ -426,8 +509,10 @@ btnManual.addEventListener('click', ()=>{
     if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+clave); return; }
     if(parsed.type==='KEY'){ for(let i=0;i<qty;i++) registerKey(parsed.key); }
   }
-  manualClave.value=''; manualQty.value='1';
+  els.manualClave.value=''; els.manualQty.value='1';
 });
+els.btnUndo.addEventListener('click', ()=>{ state.scans.pop(); state.groupedScans=group(state.scans); refreshUI(); updateCounters(); });
+els.btnResetEscaneo.addEventListener('click', ()=>{ if(!confirm('¿Reiniciar escaneos (no borra catálogo ni existencia)?')) return; state.scans=[]; state.groupedScans.clear(); refreshUI(); updateCounters(); });
 
 /* ---------------- Antirrebote cámara ---------------- */
 const FRAME_COOLDOWN_MS = 220;
@@ -450,18 +535,18 @@ const supportsBarcode = "BarcodeDetector" in window;
 let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','itf','codabar']}) : null;
 let camStream=null, detectLoop=null, quaggaActive=false;
 
-function log(msg){ diag.textContent = (msg+"\n") + diag.textContent; }
+function log(msg){ els.diag.textContent = (msg+"\n") + els.diag.textContent; }
 async function listCameras(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
     const vids=devices.filter(d=>d.kind==='videoinput');
-    cameraSelect.innerHTML = vids.map((d,i)=>`<option value="${d.deviceId}">${d.label || 'Cámara '+(i+1)}</option>`).join('');
+    els.cameraSelect.innerHTML = vids.map((d,i)=>`<option value="${d.deviceId}">${d.label || 'Cámara '+(i+1)}</option>`).join('');
     log('Videoinputs: '+vids.length);
-  }catch(e){ cameraSelect.innerHTML='<option value="">Cámara predeterminada</option>'; log('enumerateDevices error: '+e.message); }
+  }catch(e){ els.cameraSelect.innerHTML='<option value="">Cámara predeterminada</option>'; log('enumerateDevices error: '+e.message); }
 }
 navigator.mediaDevices?.enumerateDevices && listCameras();
 
-btnSolicitarPermisos.addEventListener('click', async ()=>{
+els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   updateHttpsStatus();
   try{
     const tmp = await navigator.mediaDevices.getUserMedia({ video: { facingMode: {ideal:'environment'} }, audio:false });
@@ -474,18 +559,17 @@ btnSolicitarPermisos.addEventListener('click', async ()=>{
   }
 });
 
-btnTogglePause.addEventListener('click', ()=>{
+els.btnTogglePause.addEventListener('click', ()=>{
   SCAN_PAUSED = !SCAN_PAUSED;
-  btnTogglePause.textContent = SCAN_PAUSED ? 'Reanudar escaneo' : 'Pausar escaneo';
-  btnTogglePause.className = SCAN_PAUSED ? 'btn bg-blue-500 text-white' : 'btn bg-yellow-500 text-white';
+  els.btnTogglePause.textContent = SCAN_PAUSED ? 'Reanudar escaneo' : 'Pausar escaneo';
+  els.btnTogglePause.className = SCAN_PAUSED ? 'btn bg-blue-500 text-white' : 'btn bg-yellow-500 text-white';
   setStatusOk(SCAN_PAUSED ? 'PAUSADO' : 'EN ESCANEO');
 });
 
-btnCamStart.addEventListener('click', ()=>{ const engine = engineSelect.value; if (engine === 'bd') startBD(); else startQuagga(); });
-btnCamStop.addEventListener('click', stopAll);
-btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
+els.btnCamStart.addEventListener('click', ()=>{ const engine = els.engineSelect.value; if (engine === 'bd') startBD(); else startQuagga(); });
+els.btnCamStop.addEventListener('click', stopAll);
 
-btnTorch.addEventListener('click', async ()=>{
+els.btnTorch.addEventListener('click', async ()=>{
   try{
     if (!QUIRKS.track) return alert('Cámara no activa');
     const caps = QUIRKS.track.getCapabilities?.(); if(!caps || !caps.torch) return alert('Tu dispositivo no soporta linterna');
@@ -499,12 +583,12 @@ async function startBD(){
   stopQuagga();
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   try{
-    const devId = cameraSelect.value || undefined;
+    const devId = els.cameraSelect.value || undefined;
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: devId ? {exact: devId} : undefined, facingMode: devId? undefined : {ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} },
       audio: false
     });
-    videoCam.srcObject = camStream;
+    els.videoCam.srcObject = camStream;
     QUIRKS.track = camStream.getVideoTracks()[0] || null;
     runDetectLoop();
   }catch(e){ log('startBD error: '+(e && (e.name+': '+e.message))); alert('No se pudo iniciar BD. Prueba motor Quagga2.'); }
@@ -519,7 +603,7 @@ function runDetectLoop(){
       const ts=performance.now();
       if(!runDetectLoop._last || ts-runDetectLoop._last > 160){
         runDetectLoop._last = ts;
-        const codes = await detector.detect(videoCam);
+        const codes = await detector.detect(els.videoCam);
         if (codes && codes.length) {
           const raw = codes[0].rawValue?.trim();
           if (raw && canAccept(raw)) handleScannedRaw(raw);
@@ -540,7 +624,7 @@ function startQuagga(){
     "codabar_reader","i2of5_reader","2of5_reader"
   ];
   const config = {
-    inputStream: { type: "LiveStream", target: quaggaArea, constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
+    inputStream: { type: "LiveStream", target: els.quaggaArea, constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
     locator: { patchSize: "medium", halfSample: true },
     decoder: { readers }, locate: true,
     numOfWorkers: navigator.hardwareConcurrency ? Math.max(1, navigator.hardwareConcurrency - 1) : 2
@@ -561,25 +645,25 @@ function onQuaggaDetected(data){
   handleScannedRaw(raw);
 }
 function drawQuaggaBoxes(result){
-  const ctx = quaggaOverlay.getContext("2d");
+  const ctx = els.quaggaOverlay.getContext("2d");
   clearOverlay(); if (!result) return;
   const draw = (path, color, width=2) => { ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y); for (let i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y); ctx.lineTo(path[0].x, path[0].y); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke(); };
   if (result.boxes) result.boxes.filter(b=>b !== result.box).forEach(b => draw(b, "rgba(255,255,255,0.4)", 1));
   if (result.box) draw(result.box, "rgba(0,255,0,0.8)", 3);
 }
-function overlayResize(){ const rect = quaggaArea.getBoundingClientRect(); quaggaOverlay.width = rect.width; quaggaOverlay.height = rect.height; }
-function clearOverlay(){ const ctx = quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,quaggaOverlay.width, quaggaOverlay.height); }
+function overlayResize(){ const rect = els.quaggaArea.getBoundingClientRect(); els.quaggaOverlay.width = rect.width; els.quaggaOverlay.height = rect.height; }
+function clearOverlay(){ const ctx = els.quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height); }
 window.addEventListener("resize", overlayResize);
 
 // --- Stop all ---
 function stopAll(){ stopBD(); stopQuagga(); }
 
-/* ---------------- Registro (local + Firestore) ---------------- */
+/* ---------------- Registro (local + Firestore opcional) ---------------- */
 function handleScannedRaw(raw){
   const item = state.catalog.get(raw);
   if(item){
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
-    if (chkAuto.checked) registerKey(key);
+    if (els.chkAuto.checked) registerKey(key);
     setStatusOk('OK: ' + raw); playOk();
   }else{
     setStatusErr('NO EN CATÁLOGO: ' + raw);
@@ -587,30 +671,39 @@ function handleScannedRaw(raw){
     alert('Código NO encontrado en catálogo: ' + raw + '\n\nNo se registró. Verifica el catálogo o usa "Registrar manual".');
   }
 }
-function currentSession(){ return (metaNombre.value?.trim() || 'SESION_SIN_NOMBRE').toUpperCase(); }
+function currentSession(){ return (els.metaNombre.value?.trim() || 'SESION_SIN_NOMBRE').toUpperCase(); }
 
 async function registerKey(key){
-  // Cloud primero (si falla, local)
-  try{
-    const ref = collection(db, 'conteos', currentSession(), 'eventos');
-    const nonce = crypto.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2));
-    processedNonces.add(nonce);
-    await addDoc(ref, { t: serverTimestamp(), deviceId, key, nonce, operador: (metaOperador.value||'').trim() });
-    diag.textContent = `Enviado → ${key}\n` + diag.textContent;
-  }catch(e){
+  // Cloud primero (si configurado)
+  if (db) {
+    try{
+      const ref = collection(db, 'conteos', currentSession(), 'eventos');
+      const nonce = crypto.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2));
+      processedNonces.add(nonce);
+      await addDoc(ref, { t: serverTimestamp(), deviceId, key, nonce, operador: (els.metaOperador.value||'').trim() });
+      els.diag.textContent = `Enviado → ${key}\n` + els.diag.textContent;
+    }catch(e){
+      // fallback local
+      state.scans.push(key);
+      state.groupedScans = group(state.scans);
+      refreshUI(); updateCounters();
+      els.diag.textContent = `Local fallback → ${key} (${e?.message||e})\n` + els.diag.textContent;
+    }
+  } else {
+    // local
     state.scans.push(key);
     state.groupedScans = group(state.scans);
-    refreshUI(); saveLocal();
-    diag.textContent = `Local fallback → ${key} (${e?.message||e})\n` + diag.textContent;
+    refreshUI(); updateCounters();
   }
 }
 
 // Listener Firestore por sesión (eventos + feed en vivo)
 let unsubscribe = null;
 function listenSession(){
+  if (!db) return;
   if (unsubscribe) { unsubscribe(); unsubscribe=null; }
   const ref = collection(db, 'conteos', currentSession(), 'eventos');
-  const q = query(ref, orderBy('t', 'asc'), limit(1000));
+  const q = query(ref, orderBy('t', 'asc'), limit(5000));
   unsubscribe = onSnapshot(q, snap=>{
     let changed = false;
     const feedRows = [];
@@ -623,7 +716,7 @@ function listenSession(){
       const hh = when ? when.toLocaleTimeString() : '—';
       feedRows.push(`<tr><td>${hh}</td><td>${key||''}</td><td>${op}</td><td>${dev}</td></tr>`);
     });
-    liveFeedBody.innerHTML = feedRows.reverse().slice(0,100).join('');
+    els.liveFeedBody.innerHTML = feedRows.reverse().slice(0,200).join('');
 
     snap.docChanges().forEach(ch=>{
       if (ch.type === 'added') {
@@ -635,13 +728,13 @@ function listenSession(){
         changed = true;
       }
     });
-    if (changed) { state.groupedScans = group(state.scans); refreshUI(); saveLocal(); }
+    if (changed) { state.groupedScans = group(state.scans); refreshUI(); updateCounters(); }
   });
 }
-metaNombre.addEventListener('change', listenSession);
+els.metaNombre.addEventListener('change', listenSession);
 
-/* ---------------- Reporte ---------------- */
-const filtros = { MOD: document.getElementById('filtroMOD'), COLOR: document.getElementById('filtroCOLOR'), TALLA: document.getElementById('filtroTALLA'), TEMP: document.getElementById('filtroTEMP') };
+/* ---------------- Reporte (en vivo) ---------------- */
+const filtros = { MOD: $('filtroMOD'), COLOR: $('filtroCOLOR'), TALLA: $('filtroTALLA'), TEMP: $('filtroTEMP') };
 function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TEMP=(state.keyMeta.get(key)?.TEMPORADA||'').toUpperCase();
   if(filtros.MOD.value && !MOD.toUpperCase().includes(filtros.MOD.value.toUpperCase())) return false;
   if(filtros.COLOR.value && !COLOR.toUpperCase().includes(filtros.COLOR.value.toUpperCase())) return false;
@@ -658,23 +751,23 @@ function generateReport(skipScroll){
     const e=esc.get(k)||0, x=exi.get(k)||0;
     if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e);
   }
-  tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']);
-  tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']);
-  tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']);
-  if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'});
+  els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']);
+  els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']);
+  els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']);
+  if(!skipScroll) $('tab-reporte').scrollIntoView({behavior:'smooth'});
   return {escT,sobr,falt};
 }
-btnGenerarReporte.addEventListener('click',()=>generateReport());
-btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+els.btnGenerarReporte.addEventListener('click',()=>generateReport());
+els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
-/* ---------------- Historial local ---------------- */
+/* ---------------- Historial local (no incluye catálogo) ---------------- */
 function loadHist(){ try{ return JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); }catch(_){ return []; } }
 function saveHist(list){ localStorage.setItem('conteo_cklass_hist', JSON.stringify(list)); }
 function makeSnapshot(){
-  const nombre = metaNombre.value?.trim() || '(sin nombre)';
-  const operador = metaOperador.value?.trim() || '(sin operador)';
-  const notas = metaNotas.value?.trim() || '';
+  const nombre = els.metaNombre.value?.trim() || '(sin nombre)';
+  const operador = els.metaOperador.value?.trim() || '(sin operador)';
+  const notas = els.metaNotas.value?.trim() || '';
   const when = new Date();
   return {
     id: crypto.randomUUID?.() || String(when.getTime())+'_'+Math.random().toString(36).slice(2),
@@ -686,7 +779,7 @@ function makeSnapshot(){
 }
 function renderHist(){
   const list = loadHist();
-  if(!list.length){ histList.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
+  if(!list.length){ els.histList.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
   const rows = list.slice().reverse().map(h=>`
     <tr>
       <td class="px-2 py-2 border-b">${h.fechaLocal}</td>
@@ -704,7 +797,7 @@ function renderHist(){
         </div>
       </td>
     </tr>`).join('');
-  histList.innerHTML = `<table class="min-w-full text-sm table">
+  els.histList.innerHTML = `<table class="min-w-full text-sm table">
     <thead><tr>
       <th class="text-left">Fecha</th>
       <th class="text-left">Nombre</th>
@@ -721,8 +814,7 @@ window.reabrirHist = function(id){
   state.existencia = new Map(h.existencia||[]);
   state.scans = h.scans||[];
   state.groupedScans = new Map(h.groupedScans||[]);
-  refreshUI();
-  setStatusOk('Cargado desde histórico');
+  refreshUI(); updateCounters();
   document.querySelector('[data-tab="escanear"]').click();
 };
 window.exportHistJSON = function(id){
@@ -739,23 +831,15 @@ window.borrarHist = function(id){
   if(!confirm('¿Eliminar conteo del historial?')) return;
   list.splice(i,1); saveHist(list); renderHist();
 };
-btnGuardarHistorico.addEventListener('click', ()=>{
+els.btnGuardarHistorico.addEventListener('click', ()=>{
   if (!state.scans.length && !state.existencia.size) { if(!confirm('No hay datos en este conteo. ¿Guardar de todos modos?')) return; }
   const snap = makeSnapshot();
   const list = loadHist(); list.push(snap); saveHist(list);
   renderHist(); setStatusOk('Guardado en histórico'); alert('Conteo guardado en histórico.\n\nPestaña 4) Historial.');
 });
-btnNuevaSesion.addEventListener('click', ()=>{
-  if(!confirm('Esto limpia escaneos y existencia (no el catálogo). ¿Continuar?')) return;
+els.btnNuevaSesion.addEventListener('click', ()=>{
+  if(!confirm('Esto limpia escaneos y existencia (no el catálogo fijo). ¿Continuar?')) return;
   state.scans = []; state.groupedScans.clear(); state.existencia.clear();
-  existenciaPreview.innerHTML=''; existenciaStatus.textContent='0 registros.';
-  scanLog.innerHTML=''; scanGrouped.innerHTML='';
-  saveLocal(); setStatusOk('Sesión nueva lista');
-});
-
-/* ---------------- Init ---------------- */
-function init(){ loadLocal(); refreshUI(); listCameras(); renderHist(); listenSession(); }
-init();
-</script>
-</body>
-</html>
+  els.existenciaPreview.innerHTML=''; els.existenciaCSVStatus.textContent='Sin cargar.';
+  els.scanLog.innerHTML=''; els.scanGrouped.innerHTML='';
+  refreshUI(); update
