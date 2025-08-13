@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Conteo CKLASS – PWA con Histórico + Firebase</title>
+<title>Conteo CKLASS – PWA con Firestore</title>
 <meta name="theme-color" content="#1877F2" />
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" />
@@ -25,13 +25,14 @@
   .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
   .cam-compact { height: 45vh; max-height: 420px; }
   .btn { padding:.5rem .75rem; font-size:.875rem; border-radius:.5rem; }
+  .table th, .table td { border-bottom: 1px solid #e5e7eb; padding:.25rem .5rem; }
 </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
     <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
-    <p class="text-sm text-gray-600">Importar → Escanear → Guardar histórico → Nuevo conteo. (HTTPS/localhost para cámara)</p>
+    <p class="text-sm text-gray-600">Importar → Escanear → Reporte → Historial. (HTTPS/localhost para cámara)</p>
   </header>
 
   <!-- Tabs -->
@@ -148,14 +149,30 @@
         </div>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4">
+      <div class="grid md:grid-cols-3 gap-4">
         <div>
-          <h3 class="font-semibold mb-2">Últimos escaneos</h3>
+          <h3 class="font-semibold mb-2">Últimos escaneos (local)</h3>
           <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
         </div>
         <div>
-          <h3 class="font-semibold mb-2">Acumulado por clave</h3>
+          <h3 class="font-semibold mb-2">Acumulado por clave (local)</h3>
           <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Feed en vivo (Firestore)</h3>
+          <div id="liveFeed" class="overflow-auto max-h-64 border rounded-xl">
+            <table class="min-w-full text-xs table">
+              <thead>
+                <tr>
+                  <th class="text-left">Hora</th>
+                  <th class="text-left">Clave</th>
+                  <th class="text-left">Operador</th>
+                  <th class="text-left">Dispositivo</th>
+                </tr>
+              </thead>
+              <tbody id="liveFeedBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -216,9 +233,9 @@
 <!-- Quagga2 -->
 <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 
-<!-- ============== Código principal (incluye Firebase opcional) ============== -->
+<!-- ============== Código principal (incluye Firebase v12) ============== -->
 <script type="module">
-/* ---------------- Tabs robustas (no se rompen si hay otro error) ---------------- */
+/* ---------------- Tabs robustas ---------------- */
 (() => {
   try {
     const tabs = document.querySelectorAll('.tab-btn');
@@ -245,23 +262,24 @@
   } catch (e) { console.error('Tabs error', e); }
 })();
 
-/* ---------------- Firebase (CDN) ---------------- */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+/* ---------------- Firebase (CDN v12.1.0) ---------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
-/* >>>>>>>>>>>> PEGA AQUÍ TU CONFIG REAL (si no, opera solo local) <<<<<<<<<<<<< */
+/* >>>>>>>>>>>> CONFIG REAL (tomada de tu mensaje) <<<<<<<<<<<<< */
 const firebaseConfig = {
-  // apiKey: "XXXXXXXXXXXX",
-  // authDomain: "xxxx.firebaseapp.com",
-  // projectId: "xxxx",
-  // storageBucket: "xxxx.appspot.com",
-  // messagingSenderId: "XXXXXXXX",
-  // appId: "1:XXXX:web:XXXX",
+  apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
+  authDomain: "cklass-conteo.firebaseapp.com",
+  projectId: "cklass-conteo",
+  storageBucket: "cklass-conteo.firebasestorage.app",
+  messagingSenderId: "695313165938",
+  appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
+  measurementId: "G-45LC81EE44"
 };
-const FIREBASE_READY = !!firebaseConfig.apiKey;
-let app=null, db=null;
-if (FIREBASE_READY) { app=initializeApp(firebaseConfig); db=getFirestore(app); console.log('Firebase listo'); }
-else { console.warn('Firebase NO configurado: modo local.'); }
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+console.log("Firebase listo");
 
 /* ---------------- Estado/refs ---------------- */
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
@@ -292,7 +310,8 @@ const els = {
   lastStatus: document.getElementById('lastStatus'), btnAudio: document.getElementById('btnAudio'),
   metaNombre: document.getElementById('metaNombre'), metaOperador: document.getElementById('metaOperador'), metaNotas: document.getElementById('metaNotas'),
   btnGuardarHistorico: document.getElementById('btnGuardarHistorico'), btnNuevaSesion: document.getElementById('btnNuevaSesion'),
-  histList: document.getElementById('histList')
+  histList: document.getElementById('histList'),
+  liveFeedBody: document.getElementById('liveFeedBody')
 };
 
 /* ---------------- HTTPS check ---------------- */
@@ -330,7 +349,7 @@ function renderTable(map, headers=['Clave','Cantidad']){
   return ['<table class="min-w-full text-sm">', `<thead><tr>${headers.map(h=>`<th class="text-left px-2 py-1 border-b">${h}</th>`).join('')}</tr></thead>`, '<tbody>',
     ...rows.map(([k,v])=>`<tr><td class="px-2 py-1 border-b">${k}</td><td class="px-2 py-1 border-b">${v}</td></tr>`), '</tbody></table>'].join('');
 }
-function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
+function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs table"><thead><tr><th>#</th><th>Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td>${last.length-i}</td><td>${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
 function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
@@ -340,7 +359,7 @@ function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.c
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
 /* ---------------- Importar ---------------- */
-els.fileCatalogo.addEventListener('change', async (e)=>{
+fileCatalogo.addEventListener('change', async (e)=>{
   const text=await e.target.files?.[0]?.text(); if(!text) return;
   const lines=text.split(/\r?\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
   const idx={BC:cols.indexOf('CODIGO_BARRA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), TEMP:cols.indexOf('TEMPORADA')};
@@ -354,7 +373,7 @@ els.fileCatalogo.addEventListener('change', async (e)=>{
   }
   els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
 });
-els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
+fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
 function parseExistenciaCSV(text){
   const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return;
   const cols=lines.shift().split(',').map(x=>x.trim().toUpperCase());
@@ -377,24 +396,24 @@ function parseExistenciaCSV(text){
 }
 
 /* ---------------- Pegar existencia ---------------- */
-els.btnProcesarExistencia.addEventListener('click',()=>{
+btnProcesarExistencia.addEventListener('click',()=>{
   const keys=[]; const notFound=[];
-  els.existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
-  state.existencia=group(keys); els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; els.existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
+  existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
+  state.existencia=group(keys); existenciaStatus.textContent=`${state.existencia.size} claves agrupadas. ${notFound.length?('No encontrados: '+notFound.length):''}`; existenciaPreview.innerHTML=renderTable(state.existencia); saveLocal();
 });
-els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
+btnLimpiarExistencia.addEventListener('click',()=>{ existenciaInput.value=''; state.existencia.clear(); existenciaPreview.innerHTML=''; existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
 /* ---------------- Escaneo/Manual ---------------- */
-els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
+scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){
   const p=parseLine(line);
   if(!p){ setStatusErr('Entrada inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
   if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+p.raw); return; }
   if(p.type==='KEY'){ registerKey(p.key); }
 }
-els.btnManual.addEventListener('click', ()=>{
-  const clave = (els.manualClave.value||'').trim();
-  let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
+btnManual.addEventListener('click', ()=>{
+  const clave = (manualClave.value||'').trim();
+  let qty = parseInt((manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
   if(!clave){ setStatusErr('Entrada vacía'); playErr(); buzz([70]); return; }
   if(/^\d{6,}$/.test(clave)){
     const item = state.catalog.get(clave);
@@ -407,7 +426,7 @@ els.btnManual.addEventListener('click', ()=>{
     if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+clave); return; }
     if(parsed.type==='KEY'){ for(let i=0;i<qty;i++) registerKey(parsed.key); }
   }
-  els.manualClave.value=''; els.manualQty.value='1';
+  manualClave.value=''; manualQty.value='1';
 });
 
 /* ---------------- Antirrebote cámara ---------------- */
@@ -431,18 +450,18 @@ const supportsBarcode = "BarcodeDetector" in window;
 let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','itf','codabar']}) : null;
 let camStream=null, detectLoop=null, quaggaActive=false;
 
-function log(msg){ els.diag.textContent = (msg+"\n") + els.diag.textContent; }
+function log(msg){ diag.textContent = (msg+"\n") + diag.textContent; }
 async function listCameras(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
     const vids=devices.filter(d=>d.kind==='videoinput');
-    els.cameraSelect.innerHTML = vids.map((d,i)=>`<option value="${d.deviceId}">${d.label || 'Cámara '+(i+1)}</option>`).join('');
+    cameraSelect.innerHTML = vids.map((d,i)=>`<option value="${d.deviceId}">${d.label || 'Cámara '+(i+1)}</option>`).join('');
     log('Videoinputs: '+vids.length);
-  }catch(e){ els.cameraSelect.innerHTML='<option value="">Cámara predeterminada</option>'; log('enumerateDevices error: '+e.message); }
+  }catch(e){ cameraSelect.innerHTML='<option value="">Cámara predeterminada</option>'; log('enumerateDevices error: '+e.message); }
 }
 navigator.mediaDevices?.enumerateDevices && listCameras();
 
-els.btnSolicitarPermisos.addEventListener('click', async ()=>{
+btnSolicitarPermisos.addEventListener('click', async ()=>{
   updateHttpsStatus();
   try{
     const tmp = await navigator.mediaDevices.getUserMedia({ video: { facingMode: {ideal:'environment'} }, audio:false });
@@ -455,18 +474,18 @@ els.btnSolicitarPermisos.addEventListener('click', async ()=>{
   }
 });
 
-els.btnTogglePause.addEventListener('click', ()=>{
+btnTogglePause.addEventListener('click', ()=>{
   SCAN_PAUSED = !SCAN_PAUSED;
-  els.btnTogglePause.textContent = SCAN_PAUSED ? 'Reanudar escaneo' : 'Pausar escaneo';
-  els.btnTogglePause.className = SCAN_PAUSED ? 'btn bg-blue-500 text-white' : 'btn bg-yellow-500 text-white';
+  btnTogglePause.textContent = SCAN_PAUSED ? 'Reanudar escaneo' : 'Pausar escaneo';
+  btnTogglePause.className = SCAN_PAUSED ? 'btn bg-blue-500 text-white' : 'btn bg-yellow-500 text-white';
   setStatusOk(SCAN_PAUSED ? 'PAUSADO' : 'EN ESCANEO');
 });
 
-els.btnCamStart.addEventListener('click', ()=>{ const engine = els.engineSelect.value; if (engine === 'bd') startBD(); else startQuagga(); });
-els.btnCamStop.addEventListener('click', stopAll);
-els.btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
+btnCamStart.addEventListener('click', ()=>{ const engine = engineSelect.value; if (engine === 'bd') startBD(); else startQuagga(); });
+btnCamStop.addEventListener('click', stopAll);
+btnFullscreen.addEventListener('click', ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen?.(); });
 
-els.btnTorch.addEventListener('click', async ()=>{
+btnTorch.addEventListener('click', async ()=>{
   try{
     if (!QUIRKS.track) return alert('Cámara no activa');
     const caps = QUIRKS.track.getCapabilities?.(); if(!caps || !caps.torch) return alert('Tu dispositivo no soporta linterna');
@@ -480,12 +499,12 @@ async function startBD(){
   stopQuagga();
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   try{
-    const devId = els.cameraSelect.value || undefined;
+    const devId = cameraSelect.value || undefined;
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: devId ? {exact: devId} : undefined, facingMode: devId? undefined : {ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} },
       audio: false
     });
-    els.videoCam.srcObject = camStream;
+    videoCam.srcObject = camStream;
     QUIRKS.track = camStream.getVideoTracks()[0] || null;
     runDetectLoop();
   }catch(e){ log('startBD error: '+(e && (e.name+': '+e.message))); alert('No se pudo iniciar BD. Prueba motor Quagga2.'); }
@@ -500,7 +519,7 @@ function runDetectLoop(){
       const ts=performance.now();
       if(!runDetectLoop._last || ts-runDetectLoop._last > 160){
         runDetectLoop._last = ts;
-        const codes = await detector.detect(els.videoCam);
+        const codes = await detector.detect(videoCam);
         if (codes && codes.length) {
           const raw = codes[0].rawValue?.trim();
           if (raw && canAccept(raw)) handleScannedRaw(raw);
@@ -521,7 +540,7 @@ function startQuagga(){
     "codabar_reader","i2of5_reader","2of5_reader"
   ];
   const config = {
-    inputStream: { type: "LiveStream", target: els.quaggaArea, constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
+    inputStream: { type: "LiveStream", target: quaggaArea, constraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
     locator: { patchSize: "medium", halfSample: true },
     decoder: { readers }, locate: true,
     numOfWorkers: navigator.hardwareConcurrency ? Math.max(1, navigator.hardwareConcurrency - 1) : 2
@@ -542,25 +561,25 @@ function onQuaggaDetected(data){
   handleScannedRaw(raw);
 }
 function drawQuaggaBoxes(result){
-  const ctx = els.quaggaOverlay.getContext("2d");
+  const ctx = quaggaOverlay.getContext("2d");
   clearOverlay(); if (!result) return;
   const draw = (path, color, width=2) => { ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y); for (let i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y); ctx.lineTo(path[0].x, path[0].y); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke(); };
   if (result.boxes) result.boxes.filter(b=>b !== result.box).forEach(b => draw(b, "rgba(255,255,255,0.4)", 1));
   if (result.box) draw(result.box, "rgba(0,255,0,0.8)", 3);
 }
-function overlayResize(){ const rect = els.quaggaArea.getBoundingClientRect(); els.quaggaOverlay.width = rect.width; els.quaggaOverlay.height = rect.height; }
-function clearOverlay(){ const ctx = els.quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height); }
+function overlayResize(){ const rect = quaggaArea.getBoundingClientRect(); quaggaOverlay.width = rect.width; quaggaOverlay.height = rect.height; }
+function clearOverlay(){ const ctx = quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,quaggaOverlay.width, quaggaOverlay.height); }
 window.addEventListener("resize", overlayResize);
 
 // --- Stop all ---
 function stopAll(){ stopBD(); stopQuagga(); }
 
-/* ---------------- Registro (local + Firebase) ---------------- */
+/* ---------------- Registro (local + Firestore) ---------------- */
 function handleScannedRaw(raw){
   const item = state.catalog.get(raw);
   if(item){
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
-    if (els.chkAuto.checked) registerKey(key);
+    if (chkAuto.checked) registerKey(key);
     setStatusOk('OK: ' + raw); playOk();
   }else{
     setStatusErr('NO EN CATÁLOGO: ' + raw);
@@ -568,41 +587,44 @@ function handleScannedRaw(raw){
     alert('Código NO encontrado en catálogo: ' + raw + '\n\nNo se registró. Verifica el catálogo o usa "Registrar manual".');
   }
 }
-function currentSession(){ return (els.metaNombre.value?.trim() || 'SESION_SIN_NOMBRE').toUpperCase(); }
+function currentSession(){ return (metaNombre.value?.trim() || 'SESION_SIN_NOMBRE').toUpperCase(); }
 
 async function registerKey(key){
-  // nube
-  if (FIREBASE_READY) {
+  // Cloud primero (si falla, local)
+  try{
+    const ref = collection(db, 'conteos', currentSession(), 'eventos');
     const nonce = crypto.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2));
     processedNonces.add(nonce);
-    try{
-      const ref = collection(db, 'conteos', currentSession(), 'eventos');
-      await addDoc(ref, { t: serverTimestamp(), deviceId, key, nonce, operador: (els.metaOperador.value||'').trim() });
-      els.diag.textContent = `Enviado → ${key}\n` + els.diag.textContent;
-    }catch(e){
-      // fallback local si falla nube
-      state.scans.push(key);
-      state.groupedScans = group(state.scans);
-      refreshUI(); saveLocal();
-      els.diag.textContent = `Local fallback → ${key} (${e?.message||e})\n` + els.diag.textContent;
-    }
-  } else {
-    // local
+    await addDoc(ref, { t: serverTimestamp(), deviceId, key, nonce, operador: (metaOperador.value||'').trim() });
+    diag.textContent = `Enviado → ${key}\n` + diag.textContent;
+  }catch(e){
     state.scans.push(key);
     state.groupedScans = group(state.scans);
     refreshUI(); saveLocal();
+    diag.textContent = `Local fallback → ${key} (${e?.message||e})\n` + diag.textContent;
   }
 }
 
-// Listener Firestore por sesión
+// Listener Firestore por sesión (eventos + feed en vivo)
 let unsubscribe = null;
 function listenSession(){
-  if (!FIREBASE_READY) return;
   if (unsubscribe) { unsubscribe(); unsubscribe=null; }
   const ref = collection(db, 'conteos', currentSession(), 'eventos');
-  const q = query(ref, orderBy('t'));
+  const q = query(ref, orderBy('t', 'asc'), limit(1000));
   unsubscribe = onSnapshot(q, snap=>{
     let changed = false;
+    const feedRows = [];
+    snap.forEach(doc=>{
+      const d = doc.data();
+      const key = d.key;
+      const op = d.operador || '';
+      const dev = (d.deviceId || '').slice(0,6);
+      const when = d.t?.toDate?.() ? d.t.toDate() : null;
+      const hh = when ? when.toLocaleTimeString() : '—';
+      feedRows.push(`<tr><td>${hh}</td><td>${key||''}</td><td>${op}</td><td>${dev}</td></tr>`);
+    });
+    liveFeedBody.innerHTML = feedRows.reverse().slice(0,100).join('');
+
     snap.docChanges().forEach(ch=>{
       if (ch.type === 'added') {
         const data = ch.doc.data();
@@ -616,7 +638,7 @@ function listenSession(){
     if (changed) { state.groupedScans = group(state.scans); refreshUI(); saveLocal(); }
   });
 }
-els.metaNombre.addEventListener('change', listenSession);
+metaNombre.addEventListener('change', listenSession);
 
 /* ---------------- Reporte ---------------- */
 const filtros = { MOD: document.getElementById('filtroMOD'), COLOR: document.getElementById('filtroCOLOR'), TALLA: document.getElementById('filtroTALLA'), TEMP: document.getElementById('filtroTEMP') };
@@ -636,23 +658,23 @@ function generateReport(skipScroll){
     const e=esc.get(k)||0, x=exi.get(k)||0;
     if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e);
   }
-  document.getElementById('tablaEscaneados').innerHTML=renderTable(escT,['Clave','Escaneado']);
-  document.getElementById('tablaSobrantes').innerHTML=renderTable(sobr,['Clave','Sobrante']);
-  document.getElementById('tablaFaltantes').innerHTML=renderTable(falt,['Clave','Faltante']);
+  tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']);
+  tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']);
+  tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']);
   if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'});
   return {escT,sobr,falt};
 }
-document.getElementById('btnGenerarReporte').addEventListener('click',()=>generateReport());
-document.getElementById('btnExportarCSV').addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-document.getElementById('btnRespaldarJSON').addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+btnGenerarReporte.addEventListener('click',()=>generateReport());
+btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 /* ---------------- Historial local ---------------- */
 function loadHist(){ try{ return JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); }catch(_){ return []; } }
 function saveHist(list){ localStorage.setItem('conteo_cklass_hist', JSON.stringify(list)); }
 function makeSnapshot(){
-  const nombre = els.metaNombre.value?.trim() || '(sin nombre)';
-  const operador = els.metaOperador.value?.trim() || '(sin operador)';
-  const notas = els.metaNotas.value?.trim() || '';
+  const nombre = metaNombre.value?.trim() || '(sin nombre)';
+  const operador = metaOperador.value?.trim() || '(sin operador)';
+  const notas = metaNotas.value?.trim() || '';
   const when = new Date();
   return {
     id: crypto.randomUUID?.() || String(when.getTime())+'_'+Math.random().toString(36).slice(2),
@@ -664,7 +686,7 @@ function makeSnapshot(){
 }
 function renderHist(){
   const list = loadHist();
-  if(!list.length){ els.histList.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
+  if(!list.length){ histList.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
   const rows = list.slice().reverse().map(h=>`
     <tr>
       <td class="px-2 py-2 border-b">${h.fechaLocal}</td>
@@ -682,15 +704,15 @@ function renderHist(){
         </div>
       </td>
     </tr>`).join('');
-  els.histList.innerHTML = `<table class="min-w-full text-sm">
+  histList.innerHTML = `<table class="min-w-full text-sm table">
     <thead><tr>
-      <th class="text-left px-2 py-1 border-b">Fecha</th>
-      <th class="text-left px-2 py-1 border-b">Nombre</th>
-      <th class="text-left px-2 py-1 border-b">Operador</th>
-      <th class="text-left px-2 py-1 border-b">Notas</th>
-      <th class="text-right px-2 py-1 border-b">Escaneos</th>
-      <th class="text-right px-2 py-1 border-b">Claves</th>
-      <th class="text-left px-2 py-1 border-b">Acciones</th>
+      <th class="text-left">Fecha</th>
+      <th class="text-left">Nombre</th>
+      <th class="text-left">Operador</th>
+      <th class="text-left">Notas</th>
+      <th class="text-right">Escaneos</th>
+      <th class="text-right">Claves</th>
+      <th class="text-left">Acciones</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 window.reabrirHist = function(id){
@@ -717,23 +739,22 @@ window.borrarHist = function(id){
   if(!confirm('¿Eliminar conteo del historial?')) return;
   list.splice(i,1); saveHist(list); renderHist();
 };
-document.getElementById('btnGuardarHistorico').addEventListener('click', ()=>{
+btnGuardarHistorico.addEventListener('click', ()=>{
   if (!state.scans.length && !state.existencia.size) { if(!confirm('No hay datos en este conteo. ¿Guardar de todos modos?')) return; }
   const snap = makeSnapshot();
   const list = loadHist(); list.push(snap); saveHist(list);
   renderHist(); setStatusOk('Guardado en histórico'); alert('Conteo guardado en histórico.\n\nPestaña 4) Historial.');
 });
-document.getElementById('btnNuevaSesion').addEventListener('click', ()=>{
+btnNuevaSesion.addEventListener('click', ()=>{
   if(!confirm('Esto limpia escaneos y existencia (no el catálogo). ¿Continuar?')) return;
   state.scans = []; state.groupedScans.clear(); state.existencia.clear();
-  els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.';
-  els.scanLog.innerHTML=''; els.scanGrouped.innerHTML='';
+  existenciaPreview.innerHTML=''; existenciaStatus.textContent='0 registros.';
+  scanLog.innerHTML=''; scanGrouped.innerHTML='';
   saveLocal(); setStatusOk('Sesión nueva lista');
 });
 
 /* ---------------- Init ---------------- */
-function initTabsFromHash(){ /* ya gestionado arriba */ }
-function init(){ loadLocal(); refreshUI(); listCameras(); renderHist(); if (FIREBASE_READY) listenSession(); }
+function init(){ loadLocal(); refreshUI(); listCameras(); renderHist(); listenSession(); }
 init();
 </script>
 </body>
