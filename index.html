@@ -70,13 +70,13 @@
       <!-- Existencia -->
       <div class="bg-white rounded-2xl shadow p-4">
         <h2 class="font-semibold mb-2">Existencia física (CSV) — por cíclico</h2>
-        <p class="text-xs text-gray-600 mb-2">Formato: <code>MOD,COLOR,TALLA,CANTIDAD</code> o <code>CODIGO-COLOR-TALLA,CANTIDAD</code> (también acepta <code>QTY/STOCK/EXISTENCIA</code>)</p>
+        <p class="text-xs text-gray-600 mb-2">Formato: <code>MOD,COLOR,TALLA,CANTIDAD</code> o <code>CODIGO-COLOR-TALLA,CANTIDAD</code>. También acepta pegado como <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.</p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
 
         <div class="bg-gray-50 rounded-xl p-2 mt-3">
           <label class="text-xs text-gray-600">Pegar existencia (opcional)</label>
-          <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Líneas: MOD,COLOR-TALLA | MOD|COLOR|TALLA | CODIGO_BARRA"></textarea>
+          <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Ej: 000-24,NEGRO              220          4"></textarea>
           <div class="flex gap-2 mt-2">
             <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
             <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
@@ -520,60 +520,134 @@ els.btnBorrarCatalogo.addEventListener('click', deletePersistedCatalog);
 
 /* ===== Existencia: archivo o pegado ===== */
 els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
+
+/* PEGADO DE EXISTENCIA — robusto para "000-24,NEGRO      220      4" */
 els.btnProcesarExistencia.addEventListener('click',()=>{
-  const keys=[]; const notFound=[];
-  els.existenciaInput.value.split(/\r?\n/).forEach(line=>{
-    line=line.trim(); if(!line) return;
-    if(/^\d{6,}$/.test(line)){ // código de barras en existencia pegada
+  const acc = new Map();
+  const notFound = [];
+
+  function addKey(key, qty=1){
+    if(!key) return;
+    acc.set(key, (acc.get(key)||0) + (qty||0));
+    if(!state.keyMeta.has(key)){ 
+      const [MOD,COLOR,TALLA]=key.split('|'); 
+      state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); 
+    }
+  }
+
+  els.existenciaInput.value.split(/\r?\n/).forEach(raw=>{
+    let line = (raw||'').trim();
+    if(!line) return;
+
+    // 1) Solo BC
+    if(/^\d{6,}$/.test(line)){
       const item = state.catalog.get(line);
       if(!item){ notFound.push(line); return; }
-      keys.push(toKey(item.MOD,item.COLOR,item.TALLA));
-    }else if(line.includes('|')){
-      const [m,c,t]=line.split('|').map(s=>s.trim()); if(!m||!c||!t) return; keys.push(toKey(m,c,t));
-    }else if(line.includes(',')){
-      const [mod,tail]=line.split(','); if(!mod||!tail) return;
-      if(tail.includes('-')){const [color,talla]=tail.split('-'); keys.push(toKey(mod,color,talla));}
+      addKey(toKey(item.MOD,item.COLOR,item.TALLA), 1);
+      return;
     }
+
+    // 2) Formato pedido: MOD, COLOR   TALLA   CANTIDAD  (espacios irregulares)
+    //    Ej: 000-24,NEGRO              220          4
+    let m = line.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
+    if(m){
+      const MOD = m[1].trim();
+      const COLOR = m[2].trim();
+      const TALLA = m[3].trim();
+      const QTY = parseInt(m[4],10)||0;
+      addKey(toKey(MOD,COLOR,TALLA), QTY);
+      return;
+    }
+
+    // 3) MOD|COLOR|TALLA[,CANTIDAD]
+    m = line.match(/^([^|]+)\|([^|]+)\|([^\|,]+)(?:\s*,\s*(\d+))?$/);
+    if(m){
+      const MOD=m[1].trim(), COLOR=m[2].trim(), TALLA=m[3].trim(), QTY=parseInt(m[4]||'1',10)||1;
+      addKey(toKey(MOD,COLOR,TALLA), QTY);
+      return;
+    }
+
+    // 4) MOD,COLOR-TALLA[,CANTIDAD]
+    m = line.match(/^([^,]+)\s*,\s*([^-\s][^-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/);
+    if(m){
+      const MOD=m[1].trim(), COLOR=m[2].trim(), TALLA=m[3].trim(), QTY=parseInt(m[4]||'1',10)||1;
+      addKey(toKey(MOD,COLOR,TALLA), QTY);
+      return;
+    }
+
+    // 5) MOD,COLOR,TALLA,CANTIDAD (CSV simple)
+    const parts = line.split(',').map(s=>s.trim());
+    if(parts.length>=4){
+      const [MOD,COLOR,TALLA,CANT] = parts;
+      const QTY = parseInt(CANT,10)||0;
+      if(MOD && COLOR && TALLA){ addKey(toKey(MOD,COLOR,TALLA), QTY); return; }
+    }
+
+    notFound.push('FORMATO_NO_RECONOCIDO: '+line);
   });
-  state.existencia=group(keys);
-  els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.` + (notFound.length?` No encontrados en catálogo: ${notFound.length}`:'');
-  els.existenciaPreview.innerHTML=renderTable(state.existencia);
+
+  state.existencia = acc;
+  els.existenciaStatus.textContent = `${state.existencia.size} claves agrupadas.` + (notFound.length?` Avisos: ${notFound.length}`:'');
+  els.existenciaPreview.innerHTML = renderTable(state.existencia);
   saveLocal();
 });
+
 els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
 function parseExistenciaCSV(text){
   const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return;
-  const cols=splitCSVLine(lines.shift()).map(x=>norm(x).toUpperCase());
-  const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA')};
-  let idxCant = cols.indexOf('CANTIDAD'); if(idxCant<0) idxCant = cols.indexOf('QTY'); if(idxCant<0) idxCant = cols.indexOf('STOCK'); if(idxCant<0) idxCant = cols.indexOf('EXISTENCIA');
+  const cols=splitCSVLine(lines[0]).map(x=>norm(x).toUpperCase());
+  const hasHeader = cols.includes('MOD') || cols.includes('CODIGO-COLOR-TALLA') || cols.includes('CANTIDAD') || cols.includes('QTY') || cols.includes('STOCK') || cols.includes('EXISTENCIA');
+
   const acc=new Map();
-  for(const line of lines){
-    const p=splitCSVLine(line);
-    let key=''; let qty=1; if(idxCant>=0) qty=parseInt((p[idxCant]||'1').trim(),10)||0;
-    if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA||'']); }
-    else if(idx.KEY>=0 && p[idx.KEY]){
-      const raw=p[idx.KEY].trim();
-      if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); }
-      else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); }
+  let start = 0;
+
+  if (hasHeader){
+    lines.shift(); // quita encabezado
+    const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA')};
+    let idxCant = cols.indexOf('CANTIDAD'); if(idxCant<0) idxCant = cols.indexOf('QTY'); if(idxCant<0) idxCant = cols.indexOf('STOCK'); if(idxCant<0) idxCant = cols.indexOf('EXISTENCIA');
+    for(const line of lines){
+      const p=splitCSVLine(line);
+      let key=''; let qty=1; if(idxCant>=0) qty=parseInt((p[idxCant]||'1').trim(),10)||0;
+      if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA||'']); }
+      else if(idx.KEY>=0 && p[idx.KEY]){
+        const raw=p[idx.KEY].trim();
+        if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); }
+        else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); }
+      }
+      if(!key) continue;
+      acc.set(key,(acc.get(key)||0)+(qty||0));
+      if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
     }
-    if(!key) continue;
-    acc.set(key,(acc.get(key)||0)+(qty||0));
-    if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
+  } else {
+    // Fallback para archivo SIN encabezado: intenta "MOD, COLOR   TALLA   QTY"
+    for (const raw of lines){
+      const line = (raw||'').trim(); if(!line) continue;
+      let m = line.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
+      if(m){
+        const key = toKey(m[1], m[2], m[3]);
+        const qty = parseInt(m[4],10)||0;
+        acc.set(key, (acc.get(key)||0)+qty);
+        if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
+      }
+    }
   }
-  state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
+
+  if (acc.size) {
+    state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
+  } else {
+    els.existenciaCSVStatus.textContent=`No se pudo leer el archivo de existencia.`;
+  }
 }
 
 /* ===== Escaneo/Manual ===== */
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){
-  // Traducir a KEY usando catálogo si es BC; aceptar MOD|COLOR|TALLA y MOD,COLOR-TALLA
   let key=null;
   if(/^\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+line); return; } key=toKey(item.MOD,item.COLOR,item.TALLA); }
   else if(line.includes('|')){ const [m,c,t]=line.split('|').map(s=>s.trim()); if(!m||!c||!t){ setStatusErr('Entrada inválida'); playErr(); return; } key=toKey(m,c,t); }
   else if(line.includes(',')){ const [mod,tail]=line.split(','); if(!mod||!tail){ setStatusErr('Entrada inválida'); playErr(); return; } if(tail.includes('-')){const [color,talla]=tail.split('-'); key=toKey(mod,color,talla);} }
   else { setStatusErr('Entrada inválida'); playErr(); return; }
-
   registerKey(key);
 }
 
@@ -721,14 +795,14 @@ function onQuaggaDetected(data){
   handleScannedRaw(raw);
 }
 function drawQuaggaBoxes(result){
-  const ctx = els.quaggaOverlay.getContext("2d");
+  const ctx = document.getElementById('quaggaOverlay').getContext("2d");
   clearOverlay(); if (!result) return;
   const draw = (path, color, width=2) => { ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y); for (let i=1;i<path.length;i++) ctx.lineTo(path[i].x, path[i].y); ctx.lineTo(path[0].x, path[0].y); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.stroke(); };
   if (result.boxes) result.boxes.filter(b=>b !== result.box).forEach(b => draw(b, "rgba(255,255,255,0.4)", 1));
   if (result.box) draw(result.box, "rgba(0,255,0,0.8)", 3);
 }
-function overlayResize(){ const rect = els.quaggaArea.getBoundingClientRect(); els.quaggaOverlay.width = rect.width; els.quaggaOverlay.height = rect.height; }
-function clearOverlay(){ const ctx = els.quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height); }
+function overlayResize(){ const rect = document.getElementById('quaggaArea').getBoundingClientRect(); const canvas = document.getElementById('quaggaOverlay'); canvas.width = rect.width; canvas.height = rect.height; }
+function clearOverlay(){ const canvas = document.getElementById('quaggaOverlay'); const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width, canvas.height); }
 window.addEventListener("resize", overlayResize);
 function stopAll(){ stopBD(); stopQuagga(); }
 
@@ -780,7 +854,7 @@ function listenSession(){
       const hh = when ? when.toLocaleTimeString() : '—';
       feedRows.push(`<tr><td>${hh}</td><td>${key||''}</td><td>${op}</td><td>${dev}</td></tr>`);
     });
-    els.liveFeedBody.innerHTML = feedRows.reverse().slice(0,200).join('');
+    document.getElementById('liveFeedBody').innerHTML = feedRows.reverse().slice(0,200).join('');
 
     snap.docChanges().forEach(ch=>{
       if (ch.type === 'added') {
@@ -795,7 +869,7 @@ function listenSession(){
     if (changed) { state.groupedScans = group(state.scans); refreshUI(); saveLocal(); if (els.chkAutoReporte.checked) generateReport(true); }
   });
 }
-els.metaNombre.addEventListener('change', listenSession);
+document.getElementById('metaNombre').addEventListener('change', listenSession);
 
 /* ===== Reporte ===== */
 const filtros = { MOD: document.getElementById('filtroMOD'), COLOR: document.getElementById('filtroCOLOR'), TALLA: document.getElementById('filtroTALLA'), TEMP: document.getElementById('filtroTEMP') };
@@ -815,23 +889,23 @@ function generateReport(skipScroll){
     const e=esc.get(k)||0, x=exi.get(k)||0;
     if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e);
   }
-  els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']);
-  els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']);
-  els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']);
+  document.getElementById('tablaEscaneados').innerHTML=renderTable(escT,['Clave','Escaneado']);
+  document.getElementById('tablaSobrantes').innerHTML=renderTable(sobr,['Clave','Sobrante']);
+  document.getElementById('tablaFaltantes').innerHTML=renderTable(falt,['Clave','Faltante']);
   if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'});
   return {escT,sobr,falt};
 }
-els.btnGenerarReporte.addEventListener('click',()=>generateReport());
-els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v2'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+document.getElementById('btnGenerarReporte').addEventListener('click',()=>generateReport());
+document.getElementById('btnExportarCSV').addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+document.getElementById('btnRespaldarJSON').addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v2'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 /* ===== Historial local ===== */
 function loadHist(){ try{ return JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); }catch(_){ return []; } }
 function saveHist(list){ localStorage.setItem('conteo_cklass_hist', JSON.stringify(list)); }
 function makeSnapshot(){
-  const nombre = els.metaNombre.value?.trim() || '(sin nombre)';
-  const operador = els.metaOperador.value?.trim() || '(sin operador)';
-  const notas = els.metaNotas.value?.trim() || '';
+  const nombre = document.getElementById('metaNombre').value?.trim() || '(sin nombre)';
+  const operador = document.getElementById('metaOperador').value?.trim() || '(sin operador)';
+  const notas = document.getElementById('metaNotas').value?.trim() || '';
   const when = new Date();
   return {
     id: crypto.randomUUID?.() || String(when.getTime())+'_'+Math.random().toString(36).slice(2),
@@ -843,7 +917,7 @@ function makeSnapshot(){
 }
 function renderHist(){
   const list = loadHist();
-  if(!list.length){ els.histList.innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
+  if(!list.length){ document.getElementById('histList').innerHTML = '<div class="p-3 text-sm text-gray-600">No hay conteos guardados.</div>'; return; }
   const rows = list.slice().reverse().map(h=>`
     <tr>
       <td class="px-2 py-2 border-b">${h.fechaLocal}</td>
@@ -861,7 +935,7 @@ function renderHist(){
         </div>
       </td>
     </tr>`).join('');
-  els.histList.innerHTML = `<table class="min-w-full text-sm table">
+  document.getElementById('histList').innerHTML = `<table class="min-w-full text-sm table">
     <thead><tr>
       <th class="text-left">Fecha</th>
       <th class="text-left">Nombre</th>
@@ -896,6 +970,19 @@ window.borrarHist = function(id){
   if(!confirm('¿Eliminar conteo del historial?')) return;
   list.splice(i,1); saveHist(list); renderHist();
 };
+document.getElementById('btnGuardarHistorico').addEventListener('click', ()=>{
+  if (!state.scans.length && !state.existencia.size) { if(!confirm('No hay datos en este conteo. ¿Guardar de todos modos?')) return; }
+  const snap = makeSnapshot();
+  const list = loadHist(); list.push(snap); saveHist(list);
+  renderHist(); setStatusOk('Guardado en histórico'); alert('Conteo guardado en histórico.\n\nPestaña 4) Historial.');
+});
+document.getElementById('btnNuevaSesion').addEventListener('click', ()=>{
+  if(!confirm('Esto limpia escaneos y existencia (no el catálogo). ¿Continuar?')) return;
+  state.scans = []; state.groupedScans.clear(); state.existencia.clear();
+  document.getElementById('existenciaPreview').innerHTML=''; document.getElementById('existenciaStatus').textContent='0 registros.';
+  document.getElementById('scanLog').innerHTML=''; document.getElementById('scanGrouped').innerHTML='';
+  saveLocal(); setStatusOk('Sesión nueva lista');
+});
 
 /* ===== Init ===== */
 function init(){
