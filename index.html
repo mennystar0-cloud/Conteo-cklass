@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Conteo CKLASS – PWA con Histórico</title>
+<title>Conteo CKLASS – PWA con Histórico + Firebase</title>
 <meta name="theme-color" content="#1877F2" />
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" />
@@ -24,14 +24,14 @@
   #quaggaArea { position: relative; background: #000; }
   .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
   .cam-compact { height: 45vh; max-height: 420px; }
-  .btn { @apply px-3 py-2 text-sm rounded-lg; }
+  .btn { padding:.5rem .75rem; font-size:.875rem; border-radius:.5rem; }
 </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
     <h1 class="text-2xl font-bold">Módulo de Conteo – PWA</h1>
-    <p class="text-sm text-gray-600">Importar → Escanear → Guardar histórico → Nuevo conteo. HTTPS/localhost para cámara.</p>
+    <p class="text-sm text-gray-600">Importar → Escanear → Guardar histórico → Nuevo conteo. (HTTPS/localhost para cámara)</p>
   </header>
 
   <!-- Tabs -->
@@ -49,14 +49,14 @@
     <div class="grid md:grid-cols-2 gap-4">
       <div class="bg-white rounded-2xl shadow p-4">
         <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Esperado: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Columnas: <code>CODIGO_BARRA, MOD, COLOR, TALLA, TEMPORADA</code></p>
         <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="catalogoStatus" class="text-xs text-gray-600">Sin cargar.</div>
       </div>
 
       <div class="bg-white rounded-2xl shadow p-4">
         <h2 class="font-semibold mb-2">Existencia física (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Compatibles: <code>MOD,COLOR,TALLA,Cantidad</code> ó <code>codigo-Color-Talla,Cantidad</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Formato: <code>MOD,COLOR,TALLA,CANTIDAD</code> o <code>CODIGO-COLOR-TALLA,CANTIDAD</code></p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
       </div>
@@ -83,9 +83,9 @@
     <div class="bg-white rounded-2xl shadow p-4">
       <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
 
-      <!-- Metadatos del conteo -->
+      <!-- Metadatos -->
       <div class="grid md:grid-cols-3 gap-2 mb-3">
-        <input id="metaNombre" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Nombre del conteo (p.ej. Cíclico Oferta Dama)" />
+        <input id="metaNombre" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Nombre del conteo (p.ej. CÍCLICO OFERTA DAMA)" />
         <input id="metaOperador" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Operador (p.ej. Fulanito XXXX)" />
         <input id="metaNotas" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Notas (opcional)" />
       </div>
@@ -93,6 +93,7 @@
       <div class="flex flex-wrap gap-2 mb-4">
         <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar en histórico</button>
         <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
+        <button id="btnAudio" class="btn bg-purple-600 text-white">Activar sonidos</button>
         <span id="lastStatus" class="badge bg-gray-100 text-gray-700">—</span>
       </div>
 
@@ -137,7 +138,6 @@
             <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
             <button id="btnTorch" class="btn bg-gray-100">Linterna</button>
             <button id="btnFullscreen" class="btn bg-gray-100">Pantalla completa</button>
-            <button id="btnAudio" class="btn bg-purple-600 text-white">Activar sonidos</button>
           </div>
           <div class="text-xs" id="httpsStatus"></div>
 
@@ -199,37 +199,83 @@
     </div>
   </section>
 
-  <!-- Historial -->
+  <!-- Historial local -->
   <section id="tab-historial" class="tab-pane hidden">
     <div class="bg-white rounded-2xl shadow p-4">
       <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
       <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
-      <div class="text-xs text-gray-500 mt-2">Consejo: respalda los conteos con “Respaldo JSON” y/o exporta CSV. Los datos locales se guardan en <code>localStorage</code> de este navegador/dispositivo.</div>
+      <div class="text-xs text-gray-500 mt-2">Se guarda en <code>localStorage</code>. Para multi-dispositivo, usa el mismo “Nombre del conteo” con Firebase configurado.</div>
     </div>
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Local: <code>conteo_cklass_v01</code> y <code>conteo_cklass_hist</code>. Para multi-dispositivo, activa Firebase (abajo en el código).
+    Local keys: <code>conteo_cklass_v01</code>, <code>conteo_cklass_hist</code>.
   </footer>
 </div>
 
+<!-- Quagga2 -->
 <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
 
-<script>
-/* ===================== Estado / elementos ===================== */
+<!-- ============== Código principal (incluye Firebase opcional) ============== -->
+<script type="module">
+/* ---------------- Tabs robustas (no se rompen si hay otro error) ---------------- */
+(() => {
+  try {
+    const tabs = document.querySelectorAll('.tab-btn');
+    const panes = {
+      importar: document.getElementById('tab-importar'),
+      escanear: document.getElementById('tab-escanear'),
+      reporte: document.getElementById('tab-reporte'),
+      historial: document.getElementById('tab-historial'),
+    };
+    function activate(tab) {
+      tabs.forEach(b => {
+        b.classList.toggle('text-blue-600', b.dataset.tab===tab);
+        b.classList.toggle('border-blue-600', b.dataset.tab===tab);
+      });
+      Object.entries(panes).forEach(([k, el]) => {
+        el.classList.toggle('hidden', k !== tab);
+        el.classList.toggle('block', k === tab);
+      });
+      location.hash = '#'+tab;
+    }
+    tabs.forEach(btn => btn.addEventListener('click', () => activate(btn.dataset.tab)));
+    window.addEventListener('hashchange', () => activate((location.hash||'#importar').slice(1)));
+    activate((location.hash||'#importar').slice(1));
+  } catch (e) { console.error('Tabs error', e); }
+})();
+
+/* ---------------- Firebase (CDN) ---------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+/* >>>>>>>>>>>> PEGA AQUÍ TU CONFIG REAL (si no, opera solo local) <<<<<<<<<<<<< */
+const firebaseConfig = {
+  // apiKey: "XXXXXXXXXXXX",
+  // authDomain: "xxxx.firebaseapp.com",
+  // projectId: "xxxx",
+  // storageBucket: "xxxx.appspot.com",
+  // messagingSenderId: "XXXXXXXX",
+  // appId: "1:XXXX:web:XXXX",
+};
+const FIREBASE_READY = !!firebaseConfig.apiKey;
+let app=null, db=null;
+if (FIREBASE_READY) { app=initializeApp(firebaseConfig); db=getFirestore(app); console.log('Firebase listo'); }
+else { console.warn('Firebase NO configurado: modo local.'); }
+
+/* ---------------- Estado/refs ---------------- */
 const QUIRKS = { cameraActive:false, track:null, torchOn:false };
 const state = { catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
-let SCAN_PAUSED = false;
+let SCAN_PAUSED = false;             /* ⚠️ SOLO UNA VEZ */
 const deviceId = (localStorage.getItem('conteo_device_id') || (crypto.randomUUID?.() || String(Math.random()).slice(2)));
 localStorage.setItem('conteo_device_id', deviceId);
+const processedNonces = new Set();
 
 const els = {
-  tabs: document.querySelectorAll('.tab-btn'),
-  panes: { importar:document.getElementById('tab-importar'), escanear:document.getElementById('tab-escanear'), reporte:document.getElementById('tab-reporte'), historial:document.getElementById('tab-historial') },
   fileCatalogo: document.getElementById('fileCatalogo'), catalogoStatus:document.getElementById('catalogoStatus'),
   fileExistenciaCSV: document.getElementById('fileExistenciaCSV'), existenciaCSVStatus:document.getElementById('existenciaCSVStatus'),
   existenciaInput: document.getElementById('existenciaInput'), btnProcesarExistencia:document.getElementById('btnProcesarExistencia'), btnLimpiarExistencia:document.getElementById('btnLimpiarExistencia'),
-  existenciaStatus: document.getElementById('existenciaStatus'), existenciaPreview:document.getElementById('existenciaPreview'),
+  existenciaStatus: document.getElementById('existenciaStatus'), existenciaPreview: document.getElementById('existenciaPreview'),
   scanInput: document.getElementById('scanInput'), scanLog: document.getElementById('scanLog'), scanGrouped: document.getElementById('scanGrouped'),
   btnUndo: document.getElementById('btnUndo'), btnResetEscaneo: document.getElementById('btnResetEscaneo'), btnCargarPruebaEscaneo: document.getElementById('btnCargarPruebaEscaneo'),
   cameraSelect: document.getElementById('cameraSelect'), engineSelect: document.getElementById('engineSelect'),
@@ -243,25 +289,13 @@ const els = {
   chkAuto: document.getElementById('chkAuto'), chkBeep: document.getElementById('chkBeep'),
   quaggaOverlay: document.getElementById('quaggaOverlay'), quaggaArea: document.getElementById('quaggaArea'),
   manualClave: document.getElementById('manualClave'), manualQty: document.getElementById('manualQty'), btnManual: document.getElementById('btnManual'),
-  lastStatus: document.getElementById('lastStatus'),
-  btnAudio: document.getElementById('btnAudio'),
-  // meta / historial
+  lastStatus: document.getElementById('lastStatus'), btnAudio: document.getElementById('btnAudio'),
   metaNombre: document.getElementById('metaNombre'), metaOperador: document.getElementById('metaOperador'), metaNotas: document.getElementById('metaNotas'),
   btnGuardarHistorico: document.getElementById('btnGuardarHistorico'), btnNuevaSesion: document.getElementById('btnNuevaSesion'),
   histList: document.getElementById('histList')
 };
 
-/* ===================== Tabs ===================== */
-els.tabs.forEach(btn => btn.addEventListener('click', () => {
-  els.tabs.forEach(b => b.classList.remove('text-blue-600','border-blue-600'));
-  btn.classList.add('text-blue-600','border-blue-600');
-  Object.entries(els.panes).forEach(([k, el]) => {
-    el.classList.toggle('hidden', k !== btn.dataset.tab);
-    el.classList.toggle('block', k === btn.dataset.tab);
-  });
-}));
-
-/* ===================== HTTPS check ===================== */
+/* ---------------- HTTPS check ---------------- */
 function updateHttpsStatus(){
   const isSecure = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost';
   els.httpsStatus.innerHTML = isSecure
@@ -270,20 +304,10 @@ function updateHttpsStatus(){
 }
 updateHttpsStatus();
 
-/* ===================== WebAudio (beeps) ===================== */
+/* ---------------- Sonidos WebAudio ---------------- */
 let audioCtx = null, audioReady = false;
-function initAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  audioReady = true; playTone(900, 60, 'square', 0.06);
-}
-function playTone(freq=880, ms=90, type='sine', gain=0.08) {
-  if (!audioReady || !audioCtx) return;
-  const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
-  osc.type = type; osc.frequency.value = freq; g.gain.value = gain;
-  osc.connect(g).connect(audioCtx.destination);
-  const now = audioCtx.currentTime; osc.start(now); osc.stop(now + ms/1000);
-}
+function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); audioReady = true; playTone(900, 60, 'square', 0.06); }
+function playTone(freq=880, ms=90, type='sine', gain=0.08) { if (!audioReady || !audioCtx) return; const osc = audioCtx.createOscillator(); const g = audioCtx.createGain(); osc.type = type; osc.frequency.value = freq; g.gain.value = gain; osc.connect(g).connect(audioCtx.destination); const now = audioCtx.currentTime; osc.start(now); osc.stop(now + ms/1000); }
 function playOk(){ if(!els.chkBeep.checked) return; playTone(1200, 90, 'square', 0.08); }
 function playErr(){ playTone(220, 140, 'sawtooth', 0.10); }
 function buzz(pattern=[120]){ if (navigator.vibrate) navigator.vibrate(pattern); }
@@ -292,7 +316,7 @@ const _unlock = ()=>{ initAudio(); document.removeEventListener('click', _unlock
 document.addEventListener('click', _unlock, { once:true });
 document.addEventListener('keydown', _unlock, { once:true });
 
-/* ===================== Utils ===================== */
+/* ---------------- Utilidades ---------------- */
 const toKey = (mod, color, talla) => `${(mod||'').trim()}|${(color||'').trim()}|${(talla||'').trim()}`.toUpperCase();
 function parseLine(line){ line=line.trim(); if(!line) return null;
   if(/^\d{6,}$/.test(line)){ const item=state.catalog.get(line); if(!item) return {type:'BC_NO_ENCONTRADO', raw:line}; return {type:'KEY', key:toKey(item.MOD,item.COLOR,item.TALLA)}; }
@@ -309,34 +333,50 @@ function renderTable(map, headers=['Clave','Cantidad']){
 function renderLog(list){ const last=list.slice(-50).reverse(); return ['<table class="min-w-full text-xs">','<thead><tr><th class="text-left px-2 py-1 border-b">#</th><th class="text-left px-2 py-1 border-b">Entrada</th></tr></thead><tbody>', ...last.map((x,i)=>`<tr><td class="px-2 py-1 border-b">${last.length-i}</td><td class="px-2 py-1 border-b">${x}</td></tr>`), '</tbody></table>'].join(''); }
 function group(list){ const m=new Map(); for(const k of list) if(!k.startsWith||!k.startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1); return m; }
 function exportCSV(sections){ let csv='SECCION,CLAVE,CANTIDAD\n'; for(const [name,map] of sections) for(const [k,v] of map.entries()) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); }
-function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-v1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
+function saveLocal(){ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; localStorage.setItem('conteo_cklass_v01', JSON.stringify(d)); }
 function loadLocal(){ const raw=localStorage.getItem('conteo_cklass_v01'); if(!raw) return; try{ const d=JSON.parse(raw); state.catalog=new Map(d.catalog||[]); state.indexByKey=new Map(d.indexByKey||[]); state.keyMeta=new Map(d.keyMeta||[]); state.existencia=new Map(d.existencia||[]); state.scans=d.scans||[]; state.groupedScans=group(state.scans);}catch(e){} }
 function refreshUI(){ els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; els.existenciaStatus.textContent=`${state.existencia.size} claves agrupadas.`; els.existenciaPreview.innerHTML=renderTable(state.existencia); els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); }
 function setStatusOk(msg='OK'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-green-100 text-green-700'; }
 function setStatusErr(msg='ERROR'){ els.lastStatus.textContent=msg; els.lastStatus.className='badge bg-red-100 text-red-700'; }
 
-/* ===================== Importar ===================== */
+/* ---------------- Importar ---------------- */
 els.fileCatalogo.addEventListener('change', async (e)=>{
   const text=await e.target.files?.[0]?.text(); if(!text) return;
   const lines=text.split(/\r?\n/); const header=lines.shift(); const cols=header.split(',').map(x=>x.trim().toUpperCase());
   const idx={BC:cols.indexOf('CODIGO_BARRA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), TEMP:cols.indexOf('TEMPORADA')};
-  for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue; const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim(); const key=toKey(MOD,COLOR,TALLA); state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]); state.indexByKey.get(key).push(bc); if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); }
+  for(const line of lines){ if(!line.trim()) continue; const p=line.split(','); const bc=(p[idx.BC]||'').trim(); if(!bc) continue;
+    const MOD=(p[idx.MOD]||'').trim(), COLOR=(p[idx.COLOR]||'').trim(), TALLA=(p[idx.TALLA]||'').trim(), TEMP=(p[idx.TEMP]||'').trim();
+    const key=toKey(MOD,COLOR,TALLA);
+    state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+    if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]);
+    state.indexByKey.get(key).push(bc);
+    if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+  }
   els.catalogoStatus.textContent=`${state.catalog.size} códigos de barras cargados.`; saveLocal(); refreshUI();
 });
 els.fileExistenciaCSV.addEventListener('change', async (e)=>{ const text=await e.target.files?.[0]?.text(); if(!text) return; parseExistenciaCSV(text); saveLocal(); refreshUI(); });
 function parseExistenciaCSV(text){
-  const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return; const cols=lines.shift().split(',').map(x=>x.trim().toUpperCase());
+  const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length) return;
+  const cols=lines.shift().split(',').map(x=>x.trim().toUpperCase());
   const idx={KEY:cols.indexOf('CODIGO-COLOR-TALLA'), MOD:cols.indexOf('MOD'), COLOR:cols.indexOf('COLOR'), TALLA:cols.indexOf('TALLA'), CANT:cols.indexOf('CANTIDAD')};
   const acc=new Map();
-  for(const line of lines){ const p=line.split(','); let key=''; let qty=1; if(idx.CANT>=0) qty=parseInt((p[idx.CANT]||'1').trim(),10)||0;
+  for(const line of lines){
+    const p=line.split(',');
+    let key=''; let qty=1; if(idx.CANT>=0) qty=parseInt((p[idx.CANT]||'1').trim(),10)||0;
     if(idx.MOD>=0 && idx.COLOR>=0 && idx.TALLA>=0){ key=toKey(p[idx.MOD]||'',p[idx.COLOR]||'',p[idx.TALLA||'']); }
-    else if(idx.KEY>=0 && p[idx.KEY]){ const raw=p[idx.KEY].trim(); if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); } else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); } }
-    if(!key) continue; acc.set(key,(acc.get(key)||0)+(qty||0)); if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
+    else if(idx.KEY>=0 && p[idx.KEY]){
+      const raw=p[idx.KEY].trim();
+      if(raw.includes(',')){ const [mod,tail]=raw.split(','); const [color,talla]=(tail||'').split('-'); key=toKey(mod||'',color||'',talla||''); }
+      else if(raw.includes('-')){ const [mod,color,talla]=raw.split('-'); key=toKey(mod||'',color||'',talla||''); }
+    }
+    if(!key) continue;
+    acc.set(key,(acc.get(key)||0)+(qty||0));
+    if(!state.keyMeta.has(key)){ const [MOD,COLOR,TALLA]=key.split('|'); state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:''}); }
   }
   state.existencia=acc; els.existenciaCSVStatus.textContent=`${state.existencia.size} claves cargadas.`;
 }
 
-/* ===================== Pegar existencia ===================== */
+/* ---------------- Pegar existencia ---------------- */
 els.btnProcesarExistencia.addEventListener('click',()=>{
   const keys=[]; const notFound=[];
   els.existenciaInput.value.split(/\r?\n/).forEach(line=>{ const p=parseLine(line); if(!p) return; if(p.type==='BC_NO_ENCONTRADO') notFound.push(p.raw); else if(p.type==='KEY') keys.push(p.key); });
@@ -344,16 +384,14 @@ els.btnProcesarExistencia.addEventListener('click',()=>{
 });
 els.btnLimpiarExistencia.addEventListener('click',()=>{ els.existenciaInput.value=''; state.existencia.clear(); els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.'; saveLocal(); });
 
-/* ===================== Escaneo / Manual ===================== */
+/* ---------------- Escaneo/Manual ---------------- */
 els.scanInput.addEventListener('keydown',(e)=>{ if(e.key!=='Enter') return; const line=e.target.value.trim(); e.target.value=''; if(!line) return; addScanLine(line); });
 function addScanLine(line){
   const p=parseLine(line);
   if(!p){ setStatusErr('Entrada inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
   if(p.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+p.raw); return; }
-  if(p.type==='KEY'){ state.scans.push(p.key); state.groupedScans=group(state.scans); setStatusOk('OK manual'); playOk(); }
-  els.scanLog.innerHTML=renderLog(state.scans); els.scanGrouped.innerHTML=renderTable(state.groupedScans); saveLocal();
+  if(p.type==='KEY'){ registerKey(p.key); }
 }
-
 els.btnManual.addEventListener('click', ()=>{
   const clave = (els.manualClave.value||'').trim();
   let qty = parseInt((els.manualQty.value||'1'),10); if(!qty || qty<1) qty=1;
@@ -362,26 +400,17 @@ els.btnManual.addEventListener('click', ()=>{
     const item = state.catalog.get(clave);
     if(!item){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+clave); return; }
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
-    for(let i=0;i<qty;i++) state.scans.push(key);
-    state.groupedScans=group(state.scans);
-    setStatusOk(`+${qty} por BC`); playOk();
+    for(let i=0;i<qty;i++) registerKey(key);
   }else{
     let parsed = parseLine(clave);
     if(!parsed){ setStatusErr('Clave inválida'); playErr(); buzz([70]); alert('Entrada inválida. Usa MOD|COLOR|TALLA o código de barras.'); return; }
     if(parsed.type==='BC_NO_ENCONTRADO'){ setStatusErr('BC no existe'); playErr(); buzz([70]); alert('Código no encontrado en catálogo: '+clave); return; }
-    if(parsed.type==='KEY'){
-      for(let i=0;i<qty;i++) state.scans.push(parsed.key);
-      state.groupedScans=group(state.scans);
-      setStatusOk(`+${qty} manual`); playOk();
-    }
+    if(parsed.type==='KEY'){ for(let i=0;i<qty;i++) registerKey(parsed.key); }
   }
-  els.scanLog.innerHTML=renderLog(state.scans);
-  els.scanGrouped.innerHTML=renderTable(state.groupedScans);
-  saveLocal();
   els.manualClave.value=''; els.manualQty.value='1';
 });
 
-/* ===== Antirrebote / anti-duplicados (cámara) ===== */
+/* ---------------- Antirrebote cámara ---------------- */
 const FRAME_COOLDOWN_MS = 220;
 const SAME_CODE_COOLDOWN_MS = 1800;
 let lastFrameAt = 0;
@@ -397,12 +426,12 @@ function canAccept(code){
   return true;
 }
 
-/* ===================== Motores cámara ===================== */
+/* ---------------- Cámara: BarcodeDetector / Quagga2 ---------------- */
 const supportsBarcode = "BarcodeDetector" in window;
 let detector = supportsBarcode ? new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e','itf','codabar']}) : null;
 let camStream=null, detectLoop=null, quaggaActive=false;
 
-function log(msg){ els.diag.textContent += msg + "\n"; }
+function log(msg){ els.diag.textContent = (msg+"\n") + els.diag.textContent; }
 async function listCameras(){
   try{
     const devices=await navigator.mediaDevices.enumerateDevices();
@@ -451,25 +480,18 @@ async function startBD(){
   stopQuagga();
   if (!supportsBarcode) { alert('Barcode Detector no soportado. Usa Quagga2.'); return; }
   try{
-    const deviceId = els.cameraSelect.value || undefined;
+    const devId = els.cameraSelect.value || undefined;
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: deviceId ? {exact: deviceId} : undefined, facingMode: deviceId? undefined : {ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} },
+      video: { deviceId: devId ? {exact: devId} : undefined, facingMode: devId? undefined : {ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} },
       audio: false
     });
     els.videoCam.srcObject = camStream;
     QUIRKS.track = camStream.getVideoTracks()[0] || null;
     runDetectLoop();
-  }catch(e){
-    log('startBD error: '+(e && (e.name+': '+e.message)));
-    alert('No se pudo iniciar BD. Prueba motor Quagga2.');
-  }
+  }catch(e){ log('startBD error: '+(e && (e.name+': '+e.message))); alert('No se pudo iniciar BD. Prueba motor Quagga2.'); }
 }
-function stopBD(){
-  try{ camStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){}
-  camStream=null; QUIRKS.track=null;
-  if(detectLoop) cancelAnimationFrame(detectLoop);
-  detectLoop=null;
-}
+function stopBD(){ try{ camStream?.getTracks()?.forEach(t=>t.stop()); }catch(_){}
+  camStream=null; QUIRKS.track=null; if(detectLoop) cancelAnimationFrame(detectLoop); detectLoop=null; }
 function runDetectLoop(){
   const step = async () => {
     if(!camStream) return;
@@ -514,8 +536,10 @@ function startQuagga(){
 function stopQuagga(){ try { window.Quagga?.stop(); } catch(_) {} quaggaActive = false; clearOverlay(); }
 function onQuaggaDetected(data){
   if (SCAN_PAUSED) return;
-  const raw = data?.codeResult?.code?.trim(); if (!raw) return;
-  if (!canAccept(raw)) return; handleScannedRaw(raw);
+  const raw = data?.codeResult?.code?.trim();
+  if (!raw) return;
+  if (!canAccept(raw)) return;
+  handleScannedRaw(raw);
 }
 function drawQuaggaBoxes(result){
   const ctx = els.quaggaOverlay.getContext("2d");
@@ -528,19 +552,15 @@ function overlayResize(){ const rect = els.quaggaArea.getBoundingClientRect(); e
 function clearOverlay(){ const ctx = els.quaggaOverlay.getContext("2d"); ctx.clearRect(0,0,els.quaggaOverlay.width, els.quaggaOverlay.height); }
 window.addEventListener("resize", overlayResize);
 
-// Stop all
+// --- Stop all ---
 function stopAll(){ stopBD(); stopQuagga(); }
 
-/* ===== Registro escaneos (con ALERTA si no existe) ===== */
+/* ---------------- Registro (local + Firebase) ---------------- */
 function handleScannedRaw(raw){
   const item = state.catalog.get(raw);
   if(item){
     const key = toKey(item.MOD,item.COLOR,item.TALLA);
-    if (els.chkAuto.checked) state.scans.push(key);
-    state.groupedScans = group(state.scans);
-    els.scanLog.innerHTML = renderLog(state.scans);
-    els.scanGrouped.innerHTML = renderTable(state.groupedScans);
-    saveLocal();
+    if (els.chkAuto.checked) registerKey(key);
     setStatusOk('OK: ' + raw); playOk();
   }else{
     setStatusErr('NO EN CATÁLOGO: ' + raw);
@@ -548,14 +568,65 @@ function handleScannedRaw(raw){
     alert('Código NO encontrado en catálogo: ' + raw + '\n\nNo se registró. Verifica el catálogo o usa "Registrar manual".');
   }
 }
+function currentSession(){ return (els.metaNombre.value?.trim() || 'SESION_SIN_NOMBRE').toUpperCase(); }
 
-/* ===================== Reporte / filtros ===================== */
-const filtros = { MOD: els.filtroMOD, COLOR: els.filtroCOLOR, TALLA: els.filtroTALLA, TEMP: els.filtroTEMP };
+async function registerKey(key){
+  // nube
+  if (FIREBASE_READY) {
+    const nonce = crypto.randomUUID?.() || (Date.now() + '_' + Math.random().toString(36).slice(2));
+    processedNonces.add(nonce);
+    try{
+      const ref = collection(db, 'conteos', currentSession(), 'eventos');
+      await addDoc(ref, { t: serverTimestamp(), deviceId, key, nonce, operador: (els.metaOperador.value||'').trim() });
+      els.diag.textContent = `Enviado → ${key}\n` + els.diag.textContent;
+    }catch(e){
+      // fallback local si falla nube
+      state.scans.push(key);
+      state.groupedScans = group(state.scans);
+      refreshUI(); saveLocal();
+      els.diag.textContent = `Local fallback → ${key} (${e?.message||e})\n` + els.diag.textContent;
+    }
+  } else {
+    // local
+    state.scans.push(key);
+    state.groupedScans = group(state.scans);
+    refreshUI(); saveLocal();
+  }
+}
+
+// Listener Firestore por sesión
+let unsubscribe = null;
+function listenSession(){
+  if (!FIREBASE_READY) return;
+  if (unsubscribe) { unsubscribe(); unsubscribe=null; }
+  const ref = collection(db, 'conteos', currentSession(), 'eventos');
+  const q = query(ref, orderBy('t'));
+  unsubscribe = onSnapshot(q, snap=>{
+    let changed = false;
+    snap.docChanges().forEach(ch=>{
+      if (ch.type === 'added') {
+        const data = ch.doc.data();
+        const { key, nonce } = data || {};
+        if (!key) return;
+        if (nonce && processedNonces.has(nonce)) { processedNonces.delete(nonce); return; } // evita doble
+        state.scans.push(key);
+        changed = true;
+      }
+    });
+    if (changed) { state.groupedScans = group(state.scans); refreshUI(); saveLocal(); }
+  });
+}
+els.metaNombre.addEventListener('change', listenSession);
+
+/* ---------------- Reporte ---------------- */
+const filtros = { MOD: document.getElementById('filtroMOD'), COLOR: document.getElementById('filtroCOLOR'), TALLA: document.getElementById('filtroTALLA'), TEMP: document.getElementById('filtroTEMP') };
 function keyPassesFilters(key){ const [MOD,COLOR,TALLA]=key.split('|'); const TEMP=(state.keyMeta.get(key)?.TEMPORADA||'').toUpperCase();
   if(filtros.MOD.value && !MOD.toUpperCase().includes(filtros.MOD.value.toUpperCase())) return false;
   if(filtros.COLOR.value && !COLOR.toUpperCase().includes(filtros.COLOR.value.toUpperCase())) return false;
   if(filtros.TALLA.value && !TALLA.toUpperCase().includes(filtros.TALLA.value.toUpperCase())) return false;
-  if(filtros.TEMP.value && !TEMP.includes(filtros.TEMP.value.toUpperCase())) return false; return true; }
+  if(filtros.TEMP.value && !TEMP.includes(filtros.TEMP.value.toUpperCase())) return false;
+  return true;
+}
 Object.values(filtros).forEach(inp=>inp.addEventListener('input',()=>generateReport(true)));
 function generateReport(skipScroll){
   const esc=state.groupedScans, exi=state.existencia, sobr=new Map(), falt=new Map(), escT=new Map();
@@ -565,17 +636,17 @@ function generateReport(skipScroll){
     const e=esc.get(k)||0, x=exi.get(k)||0;
     if(e>0) escT.set(k,e); if(e-x>0) sobr.set(k,e-x); if(x-e>0) falt.set(k,x-e);
   }
-  els.tablaEscaneados.innerHTML=renderTable(escT,['Clave','Escaneado']);
-  els.tablaSobrantes.innerHTML=renderTable(sobr,['Clave','Sobrante']);
-  els.tablaFaltantes.innerHTML=renderTable(falt,['Clave','Faltante']);
+  document.getElementById('tablaEscaneados').innerHTML=renderTable(escT,['Clave','Escaneado']);
+  document.getElementById('tablaSobrantes').innerHTML=renderTable(sobr,['Clave','Sobrante']);
+  document.getElementById('tablaFaltantes').innerHTML=renderTable(falt,['Clave','Faltante']);
   if(!skipScroll) document.getElementById('tab-reporte').scrollIntoView({behavior:'smooth'});
   return {escT,sobr,falt};
 }
-els.btnGenerarReporte.addEventListener('click',()=>generateReport());
-els.btnExportarCSV.addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
-els.btnRespaldarJSON.addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+document.getElementById('btnGenerarReporte').addEventListener('click',()=>generateReport());
+document.getElementById('btnExportarCSV').addEventListener('click',()=>{ const {escT,sobr,falt}=generateReport(true); exportCSV([['ESCANEADOS',escT],['SOBRANTES',sobr],['FALTANTES',falt]]); });
+document.getElementById('btnRespaldarJSON').addEventListener('click',()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans, v:'hist-fb-v1'}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
-/* ===================== HISTÓRICO local ===================== */
+/* ---------------- Historial local ---------------- */
 function loadHist(){ try{ return JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); }catch(_){ return []; } }
 function saveHist(list){ localStorage.setItem('conteo_cklass_hist', JSON.stringify(list)); }
 function makeSnapshot(){
@@ -586,12 +657,8 @@ function makeSnapshot(){
   return {
     id: crypto.randomUUID?.() || String(when.getTime())+'_'+Math.random().toString(36).slice(2),
     nombre, operador, notas,
-    fechaIso: when.toISOString(),
-    fechaLocal: when.toLocaleString(),
-    deviceId,
-    existencia: [...state.existencia],
-    scans: state.scans.slice(),
-    groupedScans: [...state.groupedScans],
+    fechaIso: when.toISOString(), fechaLocal: when.toLocaleString(), deviceId,
+    existencia: [...state.existencia], scans: state.scans.slice(), groupedScans: [...state.groupedScans],
     totals: { escaneados: state.scans.length, claves: state.groupedScans.size, existenciaClaves: state.existencia.size }
   };
 }
@@ -614,23 +681,17 @@ function renderHist(){
           <button class="btn bg-red-600 text-white" onclick="borrarHist('${h.id}')">Eliminar</button>
         </div>
       </td>
-    </tr>
-  `).join('');
-  els.histList.innerHTML = `
-    <table class="min-w-full text-sm">
-      <thead>
-        <tr>
-          <th class="text-left px-2 py-1 border-b">Fecha</th>
-          <th class="text-left px-2 py-1 border-b">Nombre</th>
-          <th class="text-left px-2 py-1 border-b">Operador</th>
-          <th class="text-left px-2 py-1 border-b">Notas</th>
-          <th class="text-right px-2 py-1 border-b">Escaneos</th>
-          <th class="text-right px-2 py-1 border-b">Claves</th>
-          <th class="text-left px-2 py-1 border-b">Acciones</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    </tr>`).join('');
+  els.histList.innerHTML = `<table class="min-w-full text-sm">
+    <thead><tr>
+      <th class="text-left px-2 py-1 border-b">Fecha</th>
+      <th class="text-left px-2 py-1 border-b">Nombre</th>
+      <th class="text-left px-2 py-1 border-b">Operador</th>
+      <th class="text-left px-2 py-1 border-b">Notas</th>
+      <th class="text-right px-2 py-1 border-b">Escaneos</th>
+      <th class="text-right px-2 py-1 border-b">Claves</th>
+      <th class="text-left px-2 py-1 border-b">Acciones</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
 }
 window.reabrirHist = function(id){
   const list = loadHist();
@@ -640,7 +701,6 @@ window.reabrirHist = function(id){
   state.groupedScans = new Map(h.groupedScans||[]);
   refreshUI();
   setStatusOk('Cargado desde histórico');
-  // Ir a pestaña escanear
   document.querySelector('[data-tab="escanear"]').click();
 };
 window.exportHistJSON = function(id){
@@ -650,98 +710,31 @@ window.exportHistJSON = function(id){
 };
 window.exportHistCSV = function(id){
   const list=loadHist(); const h=list.find(x=>x.id===id); if(!h) return;
-  const maps = [
-    ['ESCANEADOS', new Map(h.groupedScans||[])],
-    ['EXISTENCIA', new Map(h.existencia||[])]
-  ];
-  exportCSV(maps);
+  exportCSV([['ESCANEADOS', new Map(h.groupedScans||[])], ['EXISTENCIA', new Map(h.existencia||[])]]);
 };
 window.borrarHist = function(id){
   const list = loadHist(); const i=list.findIndex(x=>x.id===id); if(i<0) return;
   if(!confirm('¿Eliminar conteo del historial?')) return;
   list.splice(i,1); saveHist(list); renderHist();
 };
-
-// Guardar en histórico (cierra conteo actual)
-els.btnGuardarHistorico.addEventListener('click', ()=>{
-  if (!state.scans.length && !state.existencia.size) {
-    if(!confirm('No hay datos en este conteo. ¿Guardar de todos modos?')) return;
-  }
+document.getElementById('btnGuardarHistorico').addEventListener('click', ()=>{
+  if (!state.scans.length && !state.existencia.size) { if(!confirm('No hay datos en este conteo. ¿Guardar de todos modos?')) return; }
   const snap = makeSnapshot();
   const list = loadHist(); list.push(snap); saveHist(list);
-  renderHist();
-  setStatusOk('Guardado en histórico');
-  alert('Conteo guardado en histórico.\n\nPuedes verlo en la pestaña 4) Historial.');
+  renderHist(); setStatusOk('Guardado en histórico'); alert('Conteo guardado en histórico.\n\nPestaña 4) Historial.');
 });
-
-// Nueva sesión (limpia scans/existencia)
-els.btnNuevaSesion.addEventListener('click', ()=>{
+document.getElementById('btnNuevaSesion').addEventListener('click', ()=>{
   if(!confirm('Esto limpia escaneos y existencia (no el catálogo). ¿Continuar?')) return;
-  state.scans = [];
-  state.groupedScans.clear();
-  state.existencia.clear();
-  els.existenciaPreview.innerHTML='';
-  els.existenciaStatus.textContent='0 registros.';
-  els.scanLog.innerHTML='';
-  els.scanGrouped.innerHTML='';
-  saveLocal();
-  setStatusOk('Sesión nueva lista');
+  state.scans = []; state.groupedScans.clear(); state.existencia.clear();
+  els.existenciaPreview.innerHTML=''; els.existenciaStatus.textContent='0 registros.';
+  els.scanLog.innerHTML=''; els.scanGrouped.innerHTML='';
+  saveLocal(); setStatusOk('Sesión nueva lista');
 });
 
-/* ===================== Init ===================== */
-function initTabsFromHash(){ const hash=(location.hash||'#importar').replace('#',''); const btn=[...els.tabs].find(b=>b.dataset.tab===hash); if(btn) btn.click(); }
-function init(){ loadLocal(); refreshUI(); listCameras(); initTabsFromHash(); window.addEventListener('hashchange', initTabsFromHash); renderHist(); }
+/* ---------------- Init ---------------- */
+function initTabsFromHash(){ /* ya gestionado arriba */ }
+function init(){ loadLocal(); refreshUI(); listCameras(); renderHist(); if (FIREBASE_READY) listenSession(); }
 init();
-
-/* ===================== OPCIONAL: Firebase para multi-dispositivo ===================== */
-/*
-  Para acumular escaneos desde varios celulares:
-  1) Crea proyecto en Firebase → Habilita Firestore.
-  2) Copia tu config en firebaseConfig.
-  3) Descomenta los imports y este bloque, y marca SYNC_ON = true.
-  4) Usa un "código de sesión" (p.ej. FECHA-TIENDA) en metaNombre; todos ingresan el mismo.
-
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getFirestore, doc, collection, addDoc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
-
-    const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-
-    let SYNC_ON = true;
-
-    async function syncAddScan(key){
-      if(!SYNC_ON) return;
-      const session = (els.metaNombre.value?.trim() || 'sesion_sin_nombre').toUpperCase();
-      const ref = collection(db, 'conteos', session, 'eventos');
-      await addDoc(ref, { t: serverTimestamp(), deviceId, key });
-    }
-
-    // Escucha remota y acumula
-    function listenSession(){
-      const session = (els.metaNombre.value?.trim() || 'sesion_sin_nombre').toUpperCase();
-      const ref = collection(db, 'conteos', session, 'eventos');
-      const q = query(ref, orderBy('t'));
-      onSnapshot(q, snap=>{
-        let changed = false;
-        snap.docChanges().forEach(ch=>{
-          if(ch.type === 'added'){
-            const { key } = ch.doc.data();
-            if(key){ state.scans.push(key); changed = true; }
-          }
-        });
-        if(changed){ state.groupedScans = group(state.scans); refreshUI(); saveLocal(); }
-      });
-    }
-
-    // Llama listenSession() cuando cambie metaNombre o al iniciar
-    els.metaNombre.addEventListener('change', listenSession);
-
-    // Integra en tu flujo: cuando agregues un scan válido:
-    //  state.scans.push(key); await syncAddScan(key);
-  </script>
-*/
 </script>
 </body>
 </html>
