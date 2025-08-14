@@ -225,6 +225,63 @@ const firebaseConfig = {
 const appFB = initializeApp(firebaseConfig);
 const db = getFirestore(appFB);
 
+/* ===== Helpers Firebase: publicar cíclico, existencia, escaneos ===== */
+
+// Crea/actualiza el doc del cíclico y sube existencia como subcolección
+async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
+  // 1) cíclico
+  await setDoc(doc(db, "ciclicos", folio), {
+    folio,
+    ...meta,
+    actualizado: serverTimestamp(),
+    creadoEn: serverTimestamp()
+  }, { merge: true });
+
+  // 2) existencia (batch para velocidad)
+  if (existenciaMap && existenciaMap.size) {
+    const batch = writeBatch(db);
+    const exiCol = collection(db, `ciclicos/${folio}/existencia`);
+    for (const [clave, qty] of existenciaMap.entries()) {
+      const ref = doc(exiCol, clave); // clave = "MOD|COLOR|TALLA"
+      batch.set(ref, { clave, qty });
+    }
+    await batch.commit();
+  }
+}
+
+// Descarga existencia de la nube y la mete al estado local
+async function cargarExistenciaDeNube(folio) {
+  const snap = await getDocs(collection(db, `ciclicos/${folio}/existencia`));
+  const acc = new Map();
+  snap.forEach(d => {
+    const { clave, qty } = d.data();
+    if (clave) acc.set(clave, qty || 0);
+  });
+  state.existencia = acc;
+  $('#existenciaPreview').innerHTML = renderTable(acc);
+  $('#existenciaCSVStatus').textContent = `${acc.size} claves (nube).`;
+  $('#existenciaStatus').textContent = `${acc.size} claves (nube).`;
+  refreshUI();
+}
+
+// Registrar un escaneo en la nube (para sumar entre varios celulares)
+async function registrarEscaneoEnNube(folio, { clave, operador = '', dispositivo = '' }) {
+  await addDoc(collection(db, `ciclicos/${folio}/escaneos`), {
+    clave, operador, dispositivo,
+    ts: serverTimestamp()
+  });
+}
+
+// Escuchar feed en vivo de escaneos
+function escucharEscaneosEnVivo(folio, cb) {
+  const q = query(collection(db, `ciclicos/${folio}/escaneos`),
+                  orderBy('ts', 'desc'), limit(50));
+  return onSnapshot(q, (snap) => {
+    const rows = [];
+    snap.forEach(doc => rows.push({ id: doc.id, ...doc.data() }));
+    cb(rows);
+  });
+}
 
   /* ======== FOLIOS: generación y acciones (local) ======== */
 // Elementos
@@ -264,38 +321,66 @@ btnPublicar?.addEventListener('click', async () => {
   const folio = (folioInput.value || '').trim() || generarFolio();
   folioInput.value = folio;
 
-  // Aquí luego: subir existencia/catálogo a Firestore/Storage si lo deseas.
-  // await publicarExistencia(folio) // cuando activemos Firebase.
-
-  folioStatus.textContent = `Folio listo: ${folio} (pendiente publicar en nube)`;
-  alert(`Folio creado: ${folio}\n\nEn este paso, cuando me digas, lo conecto a Firebase para multi-dispositivo.`);
-});
-
-// Cargar folio desde URL ?folio=XXXX (prefill para los celulares)
-(function prefillFolioDesdeURL(){
-  const params = new URLSearchParams(location.search);
-  const f = params.get('folio');
-  if (f) {
-    folioInput.value = f.toUpperCase();
-    folioStatus.textContent = `Folio cargado desde URL: ${f.toUpperCase()}`;
+  if (!state.existencia || !state.existencia.size) {
+    if (!confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?')) return;
   }
-})();
 
-// Botón: Cargar folio (placeholder: solo confirma localmente)
-btnCargarFol?.addEventListener('click', () => {
-  const folio = (folioInput.value || '').trim();
-  if (!folio) { alert('Escribe o genera un folio primero.'); return; }
-  folioStatus.textContent = `Folio seleccionado: ${folio} (local)`;
-  // Aquí luego: leer existencia/escaneos desde Firestore para ese folio.
+  const meta = {
+    almacen: selAlmacen.value || 'GLOBAL',
+    dispositivo: deviceId
+  };
+
+  try {
+    await publicarCiclico(folio, meta, state.existencia);
+    folioStatus.textContent = `Publicado en nube: ${folio}`;
+    alert(`Cíclico publicado en Firebase:\n\nFolio: ${folio}\nAlmacén: ${meta.almacen}\n\nComparte el link con ?folio=${folio}`);
+  } catch (e) {
+    alert('Error al publicar en Firebase: ' + (e.message || e));
+  }
 });
 
-// Botón: Actualizar existencia (placeholder local)
-btnActExi?.addEventListener('click', () => {
+// Botón: Cargar folio de la nube → trae existencia y prepara feed en vivo
+let stopEscucha = null;
+btnCargarFol?.addEventListener('click', async () => {
   const folio = (folioInput.value || '').trim();
   if (!folio) { alert('Escribe o genera un folio primero.'); return; }
-  // Aquí luego: publicar solo la existencia a ese folio en Firestore.
-  folioStatus.textContent = `Existencia preparada para el folio: ${folio} (pendiente subir a nube)`;
+
+  try {
+    await cargarExistenciaDeNube(folio);
+    folioStatus.textContent = `Folio cargado de la nube: ${folio}`;
+    // Feed en vivo (si quieres pintarlo en una tabla, añade un tbody con id="liveFeedBody")
+    if (stopEscucha) stopEscucha();
+    stopEscucha = escucharEscaneosEnVivo(folio, (rows) => {
+      // Muestra rápido en consola o pinta donde prefieras
+      // console.log('ESCANEOS EN VIVO', rows);
+    });
+    alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`);
+  } catch (e) {
+    alert('Error al cargar de Firebase: ' + (e.message || e));
+  }
 });
+
+
+// Botón: Actualizar existencia (solo existencia) → vuelve a subir el Map actual
+btnActExi?.addEventListener('click', async () => {
+  const folio = (folioInput.value || '').trim();
+  if (!folio) { alert('Escribe o genera un folio primero.'); return; }
+  if (!state.existencia || !state.existencia.size) { alert('No hay existencia en pantalla para publicar.'); return; }
+
+  try {
+    await publicarCiclico(folio, {}, state.existencia);
+    folioStatus.textContent = `Existencia actualizada en nube para: ${folio}`;
+    alert(`Existencia actualizada en Firebase para folio ${folio}.`);
+  } catch (e) {
+    alert('Error al actualizar existencia: ' + (e.message || e));
+  }
+});
+  registrarEscaneoEnNube(folioInput.value.trim(), {
+  clave: key,
+  operador: '',              // si capturas operador
+  dispositivo: deviceId
+});
+
 
 /* ---------------- Tabs ---------------- */
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:document.getElementById('tab-importar'),escanear:document.getElementById('tab-escanear'),reporte:document.getElementById('tab-reporte'),historial:document.getElementById('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,el])=>{el.classList.toggle('hidden',k!==t);el.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
