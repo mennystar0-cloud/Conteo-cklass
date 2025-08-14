@@ -1,11 +1,11 @@
 {
-  "name": "Cklass Conteo",
-  "short_name": "Cklass",
+  "name": "Conteo Cklass",
+  "short_name": "Conteo",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#1877f2",
-  "description": "Aplicación PWA para conteo de inventario Cklass",
+  "theme_color": "#0d6efd",
+  "description": "Aplicación para conteos cíclicos y escaneo de códigos de barras",
   "icons": [
     {
       "src": "icons/icon-192.png",
