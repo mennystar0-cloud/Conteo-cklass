@@ -204,6 +204,78 @@
 </div>
 
 <script type="module">
+
+  /* ======== FOLIOS: generación y acciones (local) ======== */
+// Elementos
+const selAlmacen   = document.getElementById('selAlmacen');
+const folioInput   = document.getElementById('folioInput');
+const btnGenerar   = document.getElementById('btnGenerarFolio');
+const btnPublicar  = document.getElementById('btnPublicarFolio');
+const btnCargarFol = document.getElementById('btnCargarFolio');
+const btnActExi    = document.getElementById('btnActualizarExistencia');
+const folioStatus  = document.getElementById('folioStatus');
+
+// Prefijos de mes (ES)
+const MES_ABR = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+
+// Genera folio: MES + ALMACEN + 5 dígitos
+function generarFolio() {
+  const now = new Date();
+  const mesTxt = MES_ABR[now.getMonth()];
+  const alm = (selAlmacen.value || 'GLOBAL').toUpperCase(); // CAL, MUL, ROP, GLOBAL
+  const yyyymm = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
+  const seqKey = `folio_seq_${yyyymm}_${alm}`;
+  const next = (parseInt(localStorage.getItem(seqKey) || '0', 10) + 1);
+  localStorage.setItem(seqKey, String(next));
+  const nStr = String(next).padStart(5,'0'); // 00001
+  return `${mesTxt}${alm}${nStr}`;
+}
+
+// Botón: Generar folio
+btnGenerar?.addEventListener('click', () => {
+  const folio = generarFolio();
+  folioInput.value = folio;
+  folioStatus.textContent = `Folio generado: ${folio}`;
+});
+
+// Botón: Publicar (placeholder local, listo para conectar a Firebase)
+btnPublicar?.addEventListener('click', async () => {
+  const folio = (folioInput.value || '').trim() || generarFolio();
+  folioInput.value = folio;
+
+  // Aquí luego: subir existencia/catálogo a Firestore/Storage si lo deseas.
+  // await publicarExistencia(folio) // cuando activemos Firebase.
+
+  folioStatus.textContent = `Folio listo: ${folio} (pendiente publicar en nube)`;
+  alert(`Folio creado: ${folio}\n\nEn este paso, cuando me digas, lo conecto a Firebase para multi-dispositivo.`);
+});
+
+// Cargar folio desde URL ?folio=XXXX (prefill para los celulares)
+(function prefillFolioDesdeURL(){
+  const params = new URLSearchParams(location.search);
+  const f = params.get('folio');
+  if (f) {
+    folioInput.value = f.toUpperCase();
+    folioStatus.textContent = `Folio cargado desde URL: ${f.toUpperCase()}`;
+  }
+})();
+
+// Botón: Cargar folio (placeholder: solo confirma localmente)
+btnCargarFol?.addEventListener('click', () => {
+  const folio = (folioInput.value || '').trim();
+  if (!folio) { alert('Escribe o genera un folio primero.'); return; }
+  folioStatus.textContent = `Folio seleccionado: ${folio} (local)`;
+  // Aquí luego: leer existencia/escaneos desde Firestore para ese folio.
+});
+
+// Botón: Actualizar existencia (placeholder local)
+btnActExi?.addEventListener('click', () => {
+  const folio = (folioInput.value || '').trim();
+  if (!folio) { alert('Escribe o genera un folio primero.'); return; }
+  // Aquí luego: publicar solo la existencia a ese folio en Firestore.
+  folioStatus.textContent = `Existencia preparada para el folio: ${folio} (pendiente subir a nube)`;
+});
+
 /* ---------------- Tabs ---------------- */
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:document.getElementById('tab-importar'),escanear:document.getElementById('tab-escanear'),reporte:document.getElementById('tab-reporte'),historial:document.getElementById('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,el])=>{el.classList.toggle('hidden',k!==t);el.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
 
