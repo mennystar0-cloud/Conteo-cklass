@@ -205,6 +205,27 @@
 
 <script type="module">
 
+  /* ===== Firebase (CDN v12) ===== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+import {
+  getFirestore, doc, setDoc, writeBatch, collection, addDoc,
+  getDocs, onSnapshot, query, orderBy, limit, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+// Tu config (la que ya veníamos usando)
+const firebaseConfig = {
+  apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
+  authDomain: "cklass-conteo.firebaseapp.com",
+  projectId: "cklass-conteo",
+  storageBucket: "cklass-conteo.firebasestorage.app",
+  messagingSenderId: "695313165938",
+  appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
+  measurementId: "G-45LC81EE44"
+};
+const appFB = initializeApp(firebaseConfig);
+const db = getFirestore(appFB);
+
+
   /* ======== FOLIOS: generación y acciones (local) ======== */
 // Elementos
 const selAlmacen   = document.getElementById('selAlmacen');
