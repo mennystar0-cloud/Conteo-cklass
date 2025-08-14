@@ -1,116 +1,416 @@
-function parseExistenciaCSV(text){
-  const raw = text.replace(/\r/g,'').replace(/;/g,','); // ; → , por si Excel
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (!lines.length) { alert('Archivo de existencia vacío.'); return; }
-
-  // ¿tiene encabezado?
-  const firstDelim = detectDelimiter(lines[0]);
-  const firstCols  = splitCSVLineFlexible(lines[0], firstDelim).map(x => norm(x).toUpperCase());
-  const hasHeader =
-    ['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']
-      .some(h => firstCols.includes(h));
-
-  let header = [];
-  let delim  = ',';
-  let startIndex = 0;
-
-  if (hasHeader) {
-    header = firstCols;
-    delim  = firstDelim;
-    startIndex = 1;
-  } else {
-    // no hay header: intentamos adivinar delimitador por la segunda línea
-    const sample = lines[1] || lines[0];
-    delim = detectDelimiter(sample);
-    header = []; // sin header, usaremos patrones por línea
-    startIndex = 0;
-  }
-
-  const idxMap = hasHeader ? findColIdxMap(header, {
-    KEY: ['CODIGO-COLOR-TALLA','CLAVE','KEY'],
-    MOD: ['MOD','MODELO','SKU'],
-    COLOR: ['COLOR','COL'],
-    TALLA: ['TALLA','SIZE','NUMERO'],
-    CANT: ['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']
-  }) : null;
-
-  const acc = new Map();
-  let ok=0, skip=0; const samples=[];
-
-  for (let i=startIndex;i<lines.length;i++){
-    const line = lines[i];
-    let key = '';
-    let qty = 1;
-
-    if (hasHeader) {
-      const p = splitCSVLineFlexible(line, delim).map(x => norm(x));
-
-      if (idxMap.MOD>=0 && idxMap.COLOR>=0 && idxMap.TALLA>=0) {
-        key = toKey(p[idxMap.MOD], p[idxMap.COLOR], p[idxMap.TALLA]);
-      } else if (idxMap.KEY>=0 && p[idxMap.KEY]) {
-        const rawKey = p[idxMap.KEY];
-        if (rawKey.includes('|')) {
-          const [m,c,t] = rawKey.split('|').map(norm);
-          key = toKey(m,c,t);
-        } else if (rawKey.includes(',')) {
-          const [m, tail] = rawKey.split(',');
-          const [c, t] = (tail||'').split('-');
-          key = toKey(m,c,t);
-        } else if (rawKey.includes('-')) {
-          const [m,c,t] = rawKey.split('-').map(norm);
-          key = toKey(m,c,t);
-        }
-      }
-
-      if (idxMap.CANT>=0) {
-        const num = parseInt((p[idxMap.CANT]||'').replace(/\./g,'').replace(',', ''), 10);
-        qty = Number.isFinite(num) && num>0 ? num : 1;
-      }
-    } else {
-      // sin encabezado: soportar formatos libres
-      let l = line.replace(/\u00A0/g,' ').trim();   // NBSP → espacio
-      l = l.replace(/\s{2,}/g,' ');                // compactar espacios
-      l = l.replace(/\s*-\s*/g,'-');               // COLOR - TALLA → COLOR-TALLA
-
-      // 1) "000-24,NEGRO    220   4"
-      let m = l.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
-      if (m) { key = toKey(m[1], m[2], m[3]); qty = parseInt(m[4],10)||1; }
-
-      // 2) "MOD|COLOR|TALLA[,CANT]"
-      if (!key) {
-        m = l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/);
-        if (m){ key = toKey(m[1],m[2],m[3]); qty = parseInt(m[4]||'1',10)||1; }
-      }
-
-      // 3) "MOD,COLOR-TALLA[,CANT]"
-      if (!key) {
-        m = l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/);
-        if (m){ key = toKey(m[1],m[2],m[3]); qty = parseInt(m[4]||'1',10)||1; }
-      }
-
-      // 4) "CÓDIGO_DE_BARRAS" (buscar en catálogo)
-      if (!key && /^\d{6,}$/.test(l)) {
-        const it = state.catalog.get(l);
-        if (it) { key = toKey(it.MOD,it.COLOR,it.TALLA); qty = 1; }
-      }
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Conteo CKLASS – Cíclicos con Folio</title>
+  <meta name="theme-color" content="#1877F2" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
+      });
     }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
+  <style>
+    :root { --safe-bottom: env(safe-area-inset-bottom); --safe-top: env(safe-area-inset-top); }
+    video { object-fit: cover; }
+    @media print { .no-print { display:none!important; } }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    #quaggaOverlay { position:absolute; inset:0; pointer-events:none; }
+    #quaggaArea { position: relative; background: #000; }
+    .badge { display:inline-block; padding:.1rem .4rem; border-radius:.4rem; font-size:.75rem; }
+    .cam-compact { height: 45vh; max-height: 420px; }
+    .btn { padding:.5rem .75rem; font-size:.875rem; border-radius:.5rem; }
+    .table th, .table td { border-bottom: 1px solid #e5e7eb; padding:.25rem .5rem; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+<div class="max-w-7xl mx-auto p-4">
+  <header class="mb-4 no-print">
+    <h1 class="text-2xl font-bold">Módulo de Conteo – Catálogo fijo + Existencia por cíclico + Folio</h1>
+    <p class="text-sm text-gray-600">Importar catálogo (1 vez) → Existencia (por cíclico) → Publicar por <b>Folio</b> → Escanear en celulares.</p>
+  </header>
 
-    if (!key) { skip++; if (samples.length<3) samples.push(`L${i+1}: formato no reconocido`); continue; }
-    acc.set(key, (acc.get(key)||0) + qty);
-    if (!state.keyMeta.has(key)) {
-      const [M,C,T] = key.split('|');
-      state.keyMeta.set(key, {MOD:M, COLOR:C, TALLA:T, TEMPORADA:''});
-    }
+  <!-- Tabs -->
+  <div class="border-b border-gray-200 mb-4 no-print">
+    <nav class="-mb-px flex gap-2" id="tabs">
+      <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
+      <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
+      <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Reporte</button>
+      <button data-tab="historial" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">4) Historial</button>
+    </nav>
+  </div>
+
+  <!-- Importar -->
+  <section id="tab-importar" class="tab-pane block">
+    <div class="grid md:grid-cols-2 gap-4">
+      <!-- Catálogo -->
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Catálogo maestro (CSV) — se carga 1 sola vez</h2>
+        <p class="text-xs text-gray-600 mb-2">Columnas: <code>CODIGO_BARRA/EAN/UPC</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code> (opcional)</p>
+        <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+        <div id="catalogoStatus" class="text-xs text-gray-600">Sin cargar.</div>
+
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar catálogo guardado</button>
+          <button id="btnFijarCatalogo" class="btn bg-blue-600 text-white">Fijar como predeterminado</button>
+          <button id="btnBorrarCatalogo" class="btn bg-red-600 text-white">Borrar guardado</button>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <input id="catalogoURL" class="border rounded p-2 text-xs flex-1" placeholder="URL CSV (GitHub/Firebase Storage)"/>
+          <button id="btnCargarCatalogoURL" class="btn bg-gray-100">Cargar URL</button>
+        </div>
+        <div id="catalogoGuardadoStatus" class="text-xs text-gray-600 mt-1">—</div>
+      </div>
+
+      <!-- Existencia -->
+      <div class="bg-white rounded-2xl shadow p-4">
+        <h2 class="font-semibold mb-2">Existencia física (CSV) — por cíclico</h2>
+        <p class="text-xs text-gray-600 mb-2">Formato: <code>MOD,COLOR,TALLA,CANTIDAD</code> o <code>CODIGO-COLOR-TALLA,CANTIDAD</code>. Acepta pegado tipo: <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.</p>
+        <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+        <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
+
+        <div class="bg-gray-50 rounded-xl p-2 mt-3">
+          <label class="text-xs text-gray-600">Pegar existencia (opcional)</label>
+          <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Ej: 000-24,NEGRO              220          4"></textarea>
+          <div class="flex gap-2 mt-2">
+            <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
+            <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
+          </div>
+          <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOLIO -->
+    <div class="bg-white rounded-2xl shadow p-4 mt-4">
+      <h3 class="font-semibold mb-2">Folio de cíclico (nube)</h3>
+      <div class="grid md:grid-cols-4 gap-2">
+        <select id="selAlmacen" class="rounded-lg border border-gray-200 p-2 text-sm">
+          <option value="CAL">Calzado (CAL)</option>
+          <option value="MUL">Sport (MUL)</option>
+          <option value="ROP">Ropa (ROP)</option>
+          <option value="GLOBAL">General (GLOBAL)</option>
+        </select>
+        <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Vacío = generar automático" />
+        <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
+        <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico</button>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (nube)</button>
+        <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia (solo exi)</button>
+      </div>
+
+      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue solo.</p>
+      <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
+
+      <div class="bg-white rounded-2xl shadow p-4 mt-4">
+        <h3 class="font-semibold mb-2">Historial del folio (nube)</h3>
+        <div class="flex gap-2 mb-2"><button id="btnRefrescarHistFolio" class="btn bg-gray-100">Refrescar</button></div>
+        <div id="histFolioList" class="overflow-auto max-h-64 border rounded-xl text-sm p-2 text-gray-700">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Escanear -->
+  <section id="tab-escanear" class="tab-pane hidden">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
+
+      <div class="flex flex-wrap items-center gap-2 mb-2">
+        <select id="cameraSelect" class="border rounded p-1 text-xs"></select>
+        <button id="btnPermisos" class="btn bg-indigo-600 text-white">Permisos</button>
+        <button id="btnCamStart" class="btn bg-green-600 text-white">Iniciar</button>
+        <button id="btnCamStop" class="btn bg-gray-100">Detener</button>
+        <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
+        <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
+      </div>
+
+      <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
+        <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
+        <canvas id="quaggaOverlay"></canvas>
+      </div>
+
+      <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 my-3" placeholder="Escanea o escribe: 10902400 ó 000-01|ORO|240" />
+
+      <div class="grid md:grid-cols-3 gap-4">
+        <div>
+          <h3 class="font-semibold mb-2">Últimos escaneos</h3>
+          <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Acumulado por clave</h3>
+          <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Acciones</h3>
+          <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar histórico (local)</button>
+          <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
+          <div class="text-xs text-gray-600 mt-2" id="lastStatus">—</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Reporte -->
+  <section id="tab-reporte" class="tab-pane hidden">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
+      <div class="flex flex-wrap gap-2 mb-3 no-print">
+        <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
+        <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
+        <button id="btnRespaldarJSON" class="btn bg-gray-100">Respaldo JSON</button>
+        <button id="btnImprimir" class="btn bg-gray-100" onclick="window.print()">Imprimir</button>
+      </div>
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="border rounded-xl p-3">
+          <h3 class="font-semibold mb-2">Escaneados</h3>
+          <div id="tablaEscaneados" class="overflow-auto max-h-80"></div>
+        </div>
+        <div class="border rounded-xl p-3">
+          <h3 class="font-semibold mb-2">Sobrantes</h3>
+          <div id="tablaSobrantes" class="overflow-auto max-h-80"></div>
+        </div>
+        <div class="border rounded-xl p-3">
+          <h3 class="font-semibold mb-2">Faltantes</h3>
+          <div id="tablaFaltantes" class="overflow-auto max-h-80"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Historial local -->
+  <section id="tab-historial" class="tab-pane hidden">
+    <div class="bg-white rounded-2xl shadow p-4">
+      <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
+      <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
+      <div class="text-xs text-gray-500 mt-2">LocalStorage. Multi-dispositivo con el mismo folio via Firebase.</div>
+    </div>
+  </section>
+
+  <footer class="mt-6 text-xs text-gray-500 no-print">
+    Catálogo persistente en local. Existencia por cíclico. Cámara con antirrebote + beep OK/ERROR. Firebase conectado (folios/escaneos/existencia).
+  </footer>
+</div>
+
+<script type="module">
+/* ---------------- Tabs ---------------- */
+(()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:document.getElementById('tab-importar'),escanear:document.getElementById('tab-escanear'),reporte:document.getElementById('tab-reporte'),historial:document.getElementById('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,el])=>{el.classList.toggle('hidden',k!==t);el.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
+
+/* ---------------- Estado ---------------- */
+const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
+const deviceId=(localStorage.getItem('conteo_device_id')||(crypto.randomUUID?.()||String(Math.random()).slice(2))); localStorage.setItem('conteo_device_id',deviceId);
+const $=s=>document.querySelector(s);
+
+/* ---------------- Audio (beep OK / ERROR) ---------------- */
+let aOK=new Audio(), aERR=new Audio(); let audioReady=false;
+function prepAudio(){ try{ aOK.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; aERR.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; audioReady=true; }catch{} }
+document.body.addEventListener('click', ()=>{ if(!audioReady) prepAudio(); }, {once:true});
+
+/* ---------------- Utils + CSV robusto ---------------- */
+const norm = s => (s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
+function detectDelimiter(sample) { if (sample.includes('\t')) return '\t'; const counts=[',',';','|'].map(d=>[d,(sample.match(new RegExp(`\\${d}`,'g'))||[]).length]).sort((a,b)=>b[1]-a[1]); return counts[0][1]>0?counts[0][0]:','; }
+function splitCSVLineFlexible(line, delim){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else{q=!q;}}else if(ch===delim&&!q){out.push(cur);cur='';}else{cur+=ch;}}out.push(cur);return out;}
+function findColIdxMap(cols, schema){const up=cols.map(c=>norm(c).toUpperCase());const map={};for(const [key,aliases] of Object.entries(schema)){let idx=-1;for(const name of aliases){const pos=up.indexOf(name.toUpperCase());if(pos!==-1){idx=pos;break;}}map[key]=idx;}return map;}
+const cleanSpaces = s => norm(s).replace(/\s{2,}/g,' ');
+function toKey(m,c,t){ return `${cleanSpaces(m)}|${cleanSpaces(c)}|${cleanSpaces(t)}`.toUpperCase(); }
+function renderTable(map){return `<table class='min-w-full text-sm table'><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class='px-2'>${k}</td><td class='px-2 text-right'>${v}</td></tr>`).join('')}</tbody></table>`;}
+function group(list){const m=new Map();for(const k of list) if(!String(k).startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1);return m;}
+function refreshUI(){ $('#catalogoStatus').textContent = `${state.catalog.size} códigos cargados.`; $('#existenciaCSVStatus').textContent = `${state.existencia.size||0} claves.`; $('#existenciaStatus').textContent = `${state.existencia.size||0} claves.`; $('#existenciaPreview').innerHTML = renderTable(state.existencia); $('#scanLog').innerHTML = '<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>'; $('#scanGrouped').innerHTML = renderTable(group(state.scans)); }
+
+/* ---------------- Catálogo (robusto) ---------------- */
+function procesarCatalogoDesdeTexto(text){
+  const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){alert('El archivo está vacío.'); return;}
+  const delim=detectDelimiter(lines[0]); const header=splitCSVLineFlexible(lines[0],delim).map(x=>norm(x));
+  const idxMap=findColIdxMap(header,{BC:['CODIGO_BARRA','EAN','UPC','CODIGO','CODIGODEBARRAS','COD_BARRAS'],MOD:['MOD','MODELO','SKU','REF'],COLOR:['COLOR','COL'],TALLA:['TALLA','SIZE','NUMERO'],TEMP:['TEMPORADA','TEMP']});
+  if(idxMap.BC===-1){alert('No se encontró la columna de CÓDIGO DE BARRAS.'); return;}
+  state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
+  let ok=0,skip=0; const samples=[];
+  for(let i=1;i<lines.length;i++){
+    const parts=splitCSVLineFlexible(lines[i],delim).map(x=>norm(x));
+    const bc=parts[idxMap.BC]||''; if(!bc){skip++; if(samples.length<3) samples.push(`L${i+1}: sin código`); continue;}
+    const MOD=idxMap.MOD>=0?parts[idxMap.MOD]:'', COLOR=idxMap.COLOR>=0?parts[idxMap.COLOR]:'', TALLA=idxMap.TALLA>=0?parts[idxMap.TALLA]:'', TEMP=idxMap.TEMP>=0?parts[idxMap.TEMP]:'';
+    state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+    if(MOD||COLOR||TALLA){ const key=toKey(MOD,COLOR,TALLA); if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]); state.indexByKey.get(key).push(bc); if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP}); }
     ok++;
   }
-
-  state.existencia = acc;
-  document.getElementById('btnProcesarExistencia').addEventListener('click',()=>{
-  const raw = (document.getElementById('existenciaInput').value || '')
-    .replace(/\uFEFF/g,'')
-    .replace(/\t/g, ',')   // tab → coma
-    .trim();
-  if (!raw) { alert('No hay texto pegado.'); return; }
-  parseExistenciaCSV(raw);
-});
+  localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}));
+  document.getElementById('catalogoStatus').textContent=`${ok} registros cargados. Saltados: ${skip}${samples.length?` (ej: ${samples.join(' | ')})`:''}`;
+  document.getElementById('catalogoGuardadoStatus').textContent='Catálogo guardado (local).';
+  refreshUI();
 }
+document.getElementById('fileCatalogo').addEventListener('change', async e=>{const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); procesarCatalogoDesdeTexto(t);});
+document.getElementById('btnCargarCatalogoURL').addEventListener('click', async ()=>{ const url=$('#catalogoURL').value.trim(); if(!url) return; try{ const r=await fetch(url,{cache:'no-store'}); const t=await r.text(); procesarCatalogoDesdeTexto(t);}catch(e){alert('No se pudo cargar el CSV: '+e.message);} });
+document.getElementById('btnUsarCatalogoGuardado').addEventListener('click', ()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo guardado.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); refreshUI(); $('#catalogoGuardadoStatus').textContent='Usando catálogo guardado.'; });
+document.getElementById('btnFijarCatalogo').addEventListener('click', ()=>{ if(!state.catalog.size) return alert('Carga un catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); $('#catalogoGuardadoStatus').textContent='Catálogo guardado.'; });
+document.getElementById('btnBorrarCatalogo').addEventListener('click', ()=>{ localStorage.removeItem('catalogo_fixed_v1'); $('#catalogoGuardadoStatus').textContent='Catálogo eliminado.'; });
+
+/* ---------------- Existencia (robusto CSV/pegado) ---------------- */
+function parseExistenciaCSV(text){
+  const raw=text.replace(/\r/g,'').replace(/;/g,','); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){alert('Archivo de existencia vacío.'); return;}
+  const firstDelim=detectDelimiter(lines[0]); const firstCols=splitCSVLineFlexible(lines[0],firstDelim).map(x=>norm(x).toUpperCase());
+  const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>firstCols.includes(h));
+  let delim=',', startIndex=0, idxMap=null;
+  if(hasHeader){ delim=firstDelim; startIndex=1; idxMap=findColIdxMap(firstCols,{KEY:['CODIGO-COLOR-TALLA','CLAVE','KEY'],MOD:['MOD','MODELO','SKU'],COLOR:['COLOR','COL'],TALLA:['TALLA','SIZE','NUMERO'],CANT:['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']}); }
+  else { const sample=lines[1]||lines[0]; delim=detectDelimiter(sample); }
+  const acc=new Map(); let ok=0,skip=0; const samples=[];
+  for(let i=startIndex;i<lines.length;i++){
+    const line=lines[i]; let key=''; let qty=1;
+    if(hasHeader){
+      const p=splitCSVLineFlexible(line,delim).map(x=>norm(x));
+      if(idxMap.MOD>=0&&idxMap.COLOR>=0&&idxMap.TALLA>=0){ key=toKey(p[idxMap.MOD],p[idxMap.COLOR],p[idxMap.TALLA]); }
+      else if(idxMap.KEY>=0&&p[idxMap.KEY]){
+        const rawKey=p[idxMap.KEY];
+        if(rawKey.includes('|')){ const [m,c,t]=rawKey.split('|').map(norm); key=toKey(m,c,t); }
+        else if(rawKey.includes(',')){ const [m,tail]=rawKey.split(','); const [c,t]=(tail||'').split('-'); key=toKey(m,c,t); }
+        else if(rawKey.includes('-')){ const [m,c,t]=rawKey.split('-').map(norm); key=toKey(m,c,t); }
+      }
+      if(idxMap.CANT>=0){ const num=parseInt((p[idxMap.CANT]||'').replace(/\./g,'').replace(',',''),10); qty=Number.isFinite(num)&&num>0?num:1; }
+    } else {
+      let l=line.replace(/\u00A0/g,' ').trim(); l=l.replace(/\s{2,}/g,' '); l=l.replace(/\s*-\s*/g,'-');
+      let m=l.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/); if(m){ key=toKey(m[1],m[2],m[3]); qty=parseInt(m[4],10)||1; }
+      if(!key){ m=l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=toKey(m[1],m[2],m[3]); qty=parseInt(m[4]||'1',10)||1; } }
+      if(!key){ m=l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=toKey(m[1],m[2],m[3]); qty=parseInt(m[4]||'1',10)||1; } }
+      if(!key && /^\d{6,}$/.test(l)){ const it=state.catalog.get(l); if(it){ key=toKey(it.MOD,it.COLOR,it.TALLA); qty=1; } }
+    }
+    if(!key){ skip++; if(samples.length<3) samples.push(`L${i+1}: formato no reconocido`); continue; }
+    acc.set(key,(acc.get(key)||0)+qty);
+    if(!state.keyMeta.has(key)){ const [M,C,T]=key.split('|'); state.keyMeta.set(key,{MOD:M,COLOR:C,TALLA:T,TEMPORADA:''}); }
+    ok++;
+  }
+  state.existencia=acc;
+  $('#existenciaCSVStatus').textContent=`${ok} claves cargadas. Saltadas: ${skip}${samples.length?` (ej: ${samples.join(' | ')})`:''}`;
+  $('#existenciaStatus').textContent=`${acc.size} claves.`; $('#existenciaPreview').innerHTML=renderTable(acc); refreshUI();
+}
+document.getElementById('fileExistenciaCSV').addEventListener('change', async e=>{ const t=await e.target.files?.[0]?.text(); if(!t) return; parseExistenciaCSV(t); });
+document.getElementById('btnProcesarExistencia').addEventListener('click',()=>{ const raw=(document.getElementById('existenciaInput').value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
+document.getElementById('btnLimpiarExistencia').addEventListener('click',()=>{ $('#existenciaInput').value=''; state.existencia=new Map(); $('#existenciaPreview').innerHTML=''; $('#existenciaStatus').textContent='0 registros.'; refreshUI(); });
+
+/* ---------------- Cámara (BarcodeDetector + Quagga fallback) ---------------- */
+const video=document.getElementById('videoCam');
+const cameraSelect=document.getElementById('cameraSelect');
+let stream=null, scanning=false, lastCode='', lastTs=0;
+
+async function listCameras(){ const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]); const cams=(devices||[]).filter(d=>d.kind==='videoinput'); cameraSelect.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}">${c.label||('Cámara '+(i+1))}</option>`).join(''); }
+async function startCamera(){ try{ const deviceId=cameraSelect.value||undefined; stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', deviceId: deviceId?{exact:deviceId}:undefined}}); video.srcObject=stream; await video.play(); scanning=true; lastCode=''; lastTs=0; tryScanBD(); }catch(e){ alert('No se pudo iniciar cámara: '+(e.message||e)); } }
+function stopCamera(){ scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } if(window.Quagga){ try{ Quagga.stop(); }catch{} } }
+async function tryScanBD(){ if(!('BarcodeDetector' in window)){ return startQuagga(); } let detector; try{ detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf']}); } catch{ return startQuagga(); } const tick=async()=>{ if(!scanning) return; try{ const res=await detector.detect(video); if(res&&res.length){ const code=String(res[0].rawValue||'').trim(); if(code) handleCode(code); } }catch{} requestAnimationFrame(tick); }; tick(); }
+function startQuagga(){ if(!window.Quagga) return alert('Quagga no disponible'); Quagga.init({inputStream:{name:'Live',type:'LiveStream',target:video,constraints:{facingMode:'environment'}},decoder:{readers:['ean_reader','code_128_reader','upc_reader','code_39_reader','ean_8_reader']}}, err=>{ if(err){ alert('No se pudo iniciar Quagga: '+err); return; } Quagga.start(); scanning=true; Quagga.onDetected(d=>{ const code=(d&&d.codeResult&&d.codeResult.code)||''; if(code) handleCode(code); }); }); }
+
+/* ---------------- Firebase (CDN v12) ---------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, onSnapshot, query, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
+  authDomain: "cklass-conteo.firebaseapp.com",
+  projectId: "cklass-conteo",
+  storageBucket: "cklass-conteo.firebasestorage.app",
+  messagingSenderId: "695313165938",
+  appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
+  measurementId: "G-45LC81EE44"
+};
+const appFB = initializeApp(firebaseConfig);
+const db = getFirestore(appFB);
+
+/* ---------------- Helpers Firebase ---------------- */
+async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
+  await setDoc(doc(db, "ciclicos", folio), { folio, ...meta, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
+  if (existenciaMap && existenciaMap.size) {
+    const batch = writeBatch(db);
+    const exiCol = collection(db, `ciclicos/${folio}/existencia`);
+    for (const [clave, qty] of existenciaMap.entries()) {
+      batch.set(doc(exiCol, clave), { clave, qty });
+    }
+    await batch.commit();
+  }
+}
+async function cargarExistenciaDeNube(folio) {
+  const snap = await getDocs(collection(db, `ciclicos/${folio}/existencia`));
+  const acc = new Map();
+  snap.forEach(d => { const { clave, qty } = d.data(); if (clave) acc.set(clave, qty || 0); });
+  state.existencia = acc;
+  $('#existenciaPreview').innerHTML = renderTable(acc);
+  $('#existenciaCSVStatus').textContent = `${acc.size} claves (nube).`;
+  $('#existenciaStatus').textContent = `${acc.size} claves (nube).`;
+  refreshUI();
+}
+async function registrarEscaneoEnNube(folio, { clave, operador = '', dispositivo = '' }) {
+  if (!folio) return;
+  await addDoc(collection(db, `ciclicos/${folio}/escaneos`), { clave, operador, dispositivo, ts: serverTimestamp() });
+}
+function escucharEscaneosEnVivo(folio, cb) {
+  const q = query(collection(db, `ciclicos/${folio}/escaneos`), orderBy('ts','desc'), limit(50));
+  return onSnapshot(q, (snap) => { const rows=[]; snap.forEach(doc=>rows.push({id:doc.id,...doc.data()})); cb(rows); });
+}
+
+/* ---------------- Folios (UI + acciones) ---------------- */
+const selAlmacen=document.getElementById('selAlmacen'); const folioInput=document.getElementById('folioInput');
+const btnGenerar=document.getElementById('btnGenerarFolio'); const btnPublicar=document.getElementById('btnPublicarFolio');
+const btnCargarFol=document.getElementById('btnCargarFolio'); const btnActExi=document.getElementById('btnActualizarExistencia');
+const folioStatus=document.getElementById('folioStatus');
+
+const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
+btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); folioInput.value=folio; folioStatus.textContent=`Folio generado: ${folio}`; });
+btnPublicar?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim()||generarFolio(); folioInput.value=folio; if(!state.existencia||!state.existencia.size){ if(!confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?')) return; } const meta={almacen: selAlmacen.value || 'GLOBAL', dispositivo: deviceId}; try{ await publicarCiclico(folio, meta, state.existencia); folioStatus.textContent=`Publicado en nube: ${folio}`; alert(`Cíclico publicado en Firebase:\n\nFolio: ${folio}\nAlmacén: ${meta.almacen}\n\nComparte el link con ?folio=${folio}`); }catch(e){ alert('Error al publicar en Firebase: '+(e.message||e)); } });
+let stopEscucha=null;
+btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); folioStatus.textContent=`Folio cargado de la nube: ${folio}`; if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,(rows)=>{/* aquí podrías pintar un feed si quieres */}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e.message||e)); } });
+btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); folioStatus.textContent=`Existencia actualizada en nube para: ${folio}`; alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e.message||e)); } });
+(function(){ const params=new URLSearchParams(location.search); const f=params.get('folio'); if(f){ folioInput.value=f.toUpperCase(); folioStatus.textContent=`Folio cargado desde URL: ${f.toUpperCase()}`; } })();
+
+/* ---------------- Manejo de códigos (cámara + manual) ---------------- */
+function handleKeyFromCode(code){
+  let key=null, ok=true;
+  if(/^\d{6,}$/.test(code)){ const it=state.catalog.get(code); if(it) key=toKey(it.MOD,it.COLOR,it.TALLA); else { ok=false; key='[NO ENCONTRADO] '+code; } }
+  else { key=code; }
+  return {key, ok};
+}
+function handleCode(code){
+  const now=Date.now(); if(code===lastCode && now-lastTs<900) return; lastCode=code; lastTs=now;
+  const {key, ok}=handleKeyFromCode(code);
+  if(!ok){ if(document.getElementById('chkBeep').checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
+  if(document.getElementById('chkBeep').checked && audioReady) aOK.play().catch(()=>{});
+  if(document.getElementById('chkAuto').checked){ state.scans.push(key); refreshUI(); } else { document.getElementById('scanInput').value=key; }
+  document.getElementById('lastStatus').textContent='Leído: '+code;
+  const folio=(document.getElementById('folioInput').value||'').trim();
+  if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
+}
+document.getElementById('btnPermisos').addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); alert('Permisos listos.'); } catch(e){ alert('No se pudo otorgar permisos: '+(e.message||e)); } });
+document.getElementById('btnCamStart').addEventListener('click', async()=>{ await listCameras(); await startCamera(); });
+document.getElementById('btnCamStop').addEventListener('click', ()=>{ stopCamera(); });
+
+/* Manual (Enter) */
+document.getElementById('scanInput').addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return; const v=e.target.value.trim(); e.target.value=''; if(!v) return;
+  const {key, ok}=handleKeyFromCode(v);
+  if(!ok){ if(document.getElementById('chkBeep').checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
+  if(document.getElementById('chkBeep').checked && audioReady) aOK.play().catch(()=>{});
+  state.scans.push(key); refreshUI();
+  const folio=(document.getElementById('folioInput').value||'').trim();
+  if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
+});
+
+/* ---------------- Reporte ---------------- */
+function computeReport(){ const esc=group(state.scans), exi=state.existencia, sob=new Map(), fal=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); keys.forEach(k=>{ const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sob.set(k,e-x); if(x-e>0) fal.set(k,x-e); }); return {escT,sob,falt:fal}; }
+document.getElementById('btnGenerarReporte').addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); document.getElementById('tablaEscaneados').innerHTML=renderTable(escT); document.getElementById('tablaSobrantes').innerHTML=renderTable(sob); document.getElementById('tablaFaltantes').innerHTML=renderTable(falt); });
+document.getElementById('btnExportarCSV').addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(name,map)=>{ for(const [k,v] of map) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
+document.getElementById('btnRespaldarJSON').addEventListener('click', ()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+
+/* ---------------- Historial local ---------------- */
+function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); document.getElementById('histList').innerHTML=html.join(''); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#escanear'; window.dispatchEvent(new HashChangeEvent('hashchange')); })); }
+function saveHist(nombre='Cíclico'){ const hist=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const payload={ts:Date.now(), nombre, scans:[...state.scans], existencia:Object.fromEntries(state.existencia), catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}; hist.unshift(payload); localStorage.setItem('conteo_cklass_hist', JSON.stringify(hist.slice(0,50))); renderHist(); alert('Histórico guardado.'); }
+document.getElementById('btnGuardarHistorico').addEventListener('click', ()=>{ const nombre=prompt('Nombre del conteo / folio','Cíclico'); if(!nombre) return; saveHist(nombre); });
+document.getElementById('btnNuevaSesion').addEventListener('click', ()=>{ state.scans=[]; refreshUI(); document.getElementById('lastStatus').textContent='Sesión reiniciada.'; });
+renderHist();
+
+/* ---------------- Inicialización ---------------- */
+(function(){ const raw=localStorage.getItem('catalogo_fixed_v1'); if(raw){ try{ const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]);}catch{} } refreshUI(); })();
+</script>
+</body>
+</html>
