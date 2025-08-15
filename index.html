@@ -350,20 +350,39 @@ const firebaseConfig = {
 const appFB = initializeApp(firebaseConfig);
 const db = getFirestore(appFB);
 
-/* ---------------- Firebase helpers ---------------- */
+/* ---------------- Publicación robusta (lotes) ---------------- */
 async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
-  await setDoc(doc(db, "ciclicos", folio), { folio, ...meta, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
-  if (existenciaMap && existenciaMap.size) {
+  // encabezado
+  await setDoc(doc(db, "ciclicos", folio), {
+    folio,
+    ...meta,
+    actualizado: serverTimestamp(),
+    creadoEn: serverTimestamp()
+  }, { merge: true });
+
+  if (!existenciaMap || !existenciaMap.size) return;
+
+  const claves = [...existenciaMap.entries()];
+  const CHUNK = 450; // seguro (<500)
+  let subidos = 0;
+
+  for (let i = 0; i < claves.length; i += CHUNK) {
+    const slice = claves.slice(i, i + CHUNK);
+    setStatus(`Subiendo existencia… ${subidos}/${claves.length} (lote ${Math.floor(i/CHUNK)+1})`);
     const batch = writeBatch(db);
     const exiCol = collection(db, `ciclicos/${folio}/existencia`);
-    let i=0;
-    for (const [clave, qty] of existenciaMap.entries()) {
+    for (const [clave, qty] of slice) {
       batch.set(doc(exiCol, clave), { clave, qty });
-      if (++i % 400 === 0) await sleep(0);
     }
-    await batch.commit();
+    await withTimeout(batch.commit(), 20000, 'commit-lote');
+    subidos += slice.length;
+    await sleep(0);
   }
+
+  setStatus(`Existencia subida: ${subidos}/${claves.length}`);
 }
+
+/* ---------------- Cargar/escuchar/registrar ---------------- */
 async function cargarExistenciaDeNube(folio) {
   const snap = await getDocs(collection(db, `ciclicos/${folio}/existencia`));
   const acc = new Map();
@@ -393,7 +412,7 @@ const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV'
 function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
 btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); if(folioInput) folioInput.value=folio; setStatus(`Folio generado: ${folio}`); });
 
-/* Publicar c/ timeout y progreso */
+/* Publicar con timeout global y ping */
 btnPublicar?.addEventListener('click', async () => {
   const folio = (folioInput?.value || '').trim() || generarFolio();
   if (folioInput) folioInput.value = folio;
@@ -404,6 +423,9 @@ btnPublicar?.addEventListener('click', async () => {
 
   try {
     if (!navigator.onLine) throw new Error('Sin conexión (offline)');
+    // ping ligero a Firestore (no pasa nada si no existe)
+    try { await withTimeout(getDoc(doc(db, '_ping', 'ping')), 5000, 'ping'); } catch {}
+
     if (!state.existencia || !state.existencia.size) {
       const ok = confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?');
       if (!ok) return;
@@ -422,9 +444,9 @@ btnPublicar?.addEventListener('click', async () => {
 
       if (state.existencia && state.existencia.size) {
         setStatus(`Paso 2/2: subiendo existencia (${state.existencia.size} claves)…`);
-        await publicarCiclico(folio, {}, state.existencia);
+        await publicarCiclico(folio, {}, state.existencia); // chunked
       }
-    })(), 30000, 'publicación');
+    })(), 120000, 'publicación-global');
 
     setStatus(`✅ Publicado: ${folio}`);
     alert(`✅ Cíclico publicado\nFolio: ${folio}\nClaves existencia: ${state.existencia.size || 0}\n\nUsa “Verificar publicación” para confirmar en la nube.`);
@@ -472,6 +494,7 @@ function handleKeyFromCode(code){
   else { key=code; }
   return {key, ok};
 }
+let lastCode='', lastTs=0;
 function handleCode(code){
   const now=Date.now(); if(code===lastCode && now-lastTs<900) return; lastCode=code; lastTs=now;
   const {key, ok}=handleKeyFromCode(code);
