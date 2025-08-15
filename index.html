@@ -104,6 +104,7 @@
       <div class="mt-2 flex flex-wrap gap-2">
         <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (nube)</button>
         <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia (solo exi)</button>
+        <button id="btnVerificarFolio" class="btn bg-gray-200">Verificar publicación</button>
       </div>
 
       <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue solo.</p>
@@ -201,7 +202,7 @@
 </div>
 
 <script type="module">
-/* --------- Debug visible (muestra error + stack en pantalla) --------- */
+/* --------- Debug visible --------- */
 function showDiag(msg, err){
   const d = document.getElementById('diag') || document.body.appendChild(
     Object.assign(document.createElement('div'), { id:'diag', className:'mono text-xs p-2 bg-yellow-50 border mt-2' })
@@ -214,20 +215,27 @@ window.addEventListener('unhandledrejection', ev => { alert('Promesa no manejada
 /* ---------------- Tabs ---------------- */
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:document.getElementById('tab-importar'),escanear:document.getElementById('tab-escanear'),reporte:document.getElementById('tab-reporte'),historial:document.getElementById('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,el])=>{el.classList.toggle('hidden',k!==t);el.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
 
-/* ---------------- Estado + helpers seguros ---------------- */
+/* ---------------- Estado + helpers ---------------- */
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
 const deviceId=(localStorage.getItem('conteo_device_id')||(crypto.randomUUID?.()||String(Math.random()).slice(2))); localStorage.setItem('conteo_device_id',deviceId);
 const $=s=>document.querySelector(s);
 function el(id){ return document.getElementById(id); }
 function setText(id, txt){ const e=el(id); if(e) e.textContent=txt; }
 function setHTML(id, html){ const e=el(id); if(e) e.innerHTML=html; }
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+async function withTimeout(promise, ms, label='operación'){
+  let t; const timeout = new Promise((_,rej)=> t=setTimeout(()=>rej(new Error(`Timeout (${label}) ${ms}ms`)), ms));
+  try { return await Promise.race([promise, timeout]); }
+  finally { clearTimeout(t); }
+}
+function setStatus(txt){ setText('folioStatus', txt); }
 
-/* ---------------- Audio (beep OK / ERROR) ---------------- */
+/* ---------------- Audio ---------------- */
 let aOK=new Audio(), aERR=new Audio(); let audioReady=false;
 function prepAudio(){ try{ aOK.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; aERR.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; audioReady=true; }catch{} }
 document.body.addEventListener('click', ()=>{ if(!audioReady) prepAudio(); }, {once:true});
 
-/* ---------------- Utils + CSV robusto ---------------- */
+/* ---------------- CSV utils ---------------- */
 const norm = s => (s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
 function detectDelimiter(sample) { if (sample.includes('\t')) return '\t'; const counts=[',',';','|'].map(d=>[d,(sample.match(new RegExp(`\\${d}`,'g'))||[]).length]).sort((a,b)=>b[1]-a[1]); return counts[0][1]>0?counts[0][0]:','; }
 function splitCSVLineFlexible(line, delim){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else{q=!q;}}else if(ch===delim&&!q){out.push(cur);cur='';}else{cur+=ch;}}out.push(cur);return out;}
@@ -245,7 +253,7 @@ function refreshUI(){
   setHTML('scanGrouped', renderTable(group(state.scans)));
 }
 
-/* ---------------- Catálogo (robusto) ---------------- */
+/* ---------------- Catálogo ---------------- */
 function procesarCatalogoDesdeTexto(text){
   const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){alert('El archivo está vacío.'); return;}
   const delim=detectDelimiter(lines[0]); const header=splitCSVLineFlexible(lines[0],delim).map(x=>norm(x));
@@ -272,7 +280,7 @@ el('btnUsarCatalogoGuardado')?.addEventListener('click', ()=>{ const raw=localSt
 el('btnFijarCatalogo')?.addEventListener('click', ()=>{ if(!state.catalog.size) return alert('Carga un catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); setText('catalogoGuardadoStatus','Catálogo guardado.'); });
 el('btnBorrarCatalogo')?.addEventListener('click', ()=>{ localStorage.removeItem('catalogo_fixed_v1'); setText('catalogoGuardadoStatus','Catálogo eliminado.'); });
 
-/* ---------------- Existencia (robusto CSV/pegado) ---------------- */
+/* ---------------- Existencia ---------------- */
 function parseExistenciaCSV(text){
   const raw=text.replace(/\r/g,'').replace(/;/g,','); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){alert('Archivo de existencia vacío.'); return;}
   const firstDelim=detectDelimiter(lines[0]); const firstCols=splitCSVLineFlexible(lines[0],firstDelim).map(x=>norm(x).toUpperCase());
@@ -315,7 +323,7 @@ el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const t=await e.t
 el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
 el('btnLimpiarExistencia')?.addEventListener('click',()=>{ if(el('existenciaInput')) el('existenciaInput').value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
-/* ---------------- Cámara (BarcodeDetector + Quagga fallback) ---------------- */
+/* ---------------- Cámara ---------------- */
 const video=el('videoCam'); const cameraSelect=el('cameraSelect');
 let stream=null, scanning=false, lastCode='', lastTs=0;
 async function listCameras(){ const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]); const cams=(devices||[]).filter(d=>d.kind==='videoinput'); if(cameraSelect) cameraSelect.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}">${c.label||('Cámara '+(i+1))}</option>`).join(''); }
@@ -329,7 +337,7 @@ el('btnCamStop')?.addEventListener('click', ()=>{ stopCamera(); });
 
 /* ---------------- Firebase (CDN v12) ---------------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, onSnapshot, query, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
   authDomain: "cklass-conteo.firebaseapp.com",
@@ -342,14 +350,16 @@ const firebaseConfig = {
 const appFB = initializeApp(firebaseConfig);
 const db = getFirestore(appFB);
 
-/* ---------------- Helpers Firebase ---------------- */
+/* ---------------- Firebase helpers ---------------- */
 async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
   await setDoc(doc(db, "ciclicos", folio), { folio, ...meta, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
   if (existenciaMap && existenciaMap.size) {
     const batch = writeBatch(db);
     const exiCol = collection(db, `ciclicos/${folio}/existencia`);
+    let i=0;
     for (const [clave, qty] of existenciaMap.entries()) {
       batch.set(doc(exiCol, clave), { clave, qty });
+      if (++i % 400 === 0) await sleep(0);
     }
     await batch.commit();
   }
@@ -376,47 +386,86 @@ function escucharEscaneosEnVivo(folio, cb) {
 /* ---------------- Folios (UI + acciones) ---------------- */
 const selAlmacen=el('selAlmacen'); const folioInput=el('folioInput');
 const btnGenerar=el('btnGenerarFolio'); const btnPublicar=el('btnPublicarFolio');
-const btnCargarFol=el('btnCargarFolio'); const btnActExi=el('btnActualizarExistencia');
+const btnCargarFol=el('btnCargarFolio'); const btnActExi=el('btnActualizarExistencia'); const btnVerificar=el('btnVerificarFolio');
 const folioStatus=el('folioStatus');
 
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
-btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); if(folioInput) folioInput.value=folio; setText('folioStatus',`Folio generado: ${folio}`); });
+btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); if(folioInput) folioInput.value=folio; setStatus(`Folio generado: ${folio}`); });
 
-/* Handler con feedback y errores visibles */
+/* Publicar c/ timeout y progreso */
 btnPublicar?.addEventListener('click', async () => {
   const folio = (folioInput?.value || '').trim() || generarFolio();
   if (folioInput) folioInput.value = folio;
 
   btnPublicar.disabled = true;
   const oldText = btnPublicar.textContent;
-  btnPublicar.textContent = 'Publicando...';
+  btnPublicar.textContent = 'Publicando…';
 
   try {
+    if (!navigator.onLine) throw new Error('Sin conexión (offline)');
     if (!state.existencia || !state.existencia.size) {
       const ok = confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?');
       if (!ok) return;
     }
-    const meta = { almacen: selAlmacen?.value || 'GLOBAL', dispositivo: deviceId };
-    if (!db) throw new Error('Firebase no inicializado');
-    await publicarCiclico(folio, meta, state.existencia);
-    setText('folioStatus', `Publicado en nube: ${folio}`);
-    alert(`✅ Cíclico publicado en Firebase\n\nFolio: ${folio}\nAlmacén: ${meta.almacen}\n\nComparte el link con ?folio=${folio}`);
+
+    setStatus(`Conectando… Folio ${folio}`);
+    await withTimeout((async () => {
+      setStatus('Paso 1/2: guardando encabezado…');
+      await setDoc(doc(db, "ciclicos", folio), {
+        folio,
+        almacen: selAlmacen?.value || 'GLOBAL',
+        dispositivo: deviceId,
+        actualizado: serverTimestamp(),
+        creadoEn: serverTimestamp()
+      }, { merge: true });
+
+      if (state.existencia && state.existencia.size) {
+        setStatus(`Paso 2/2: subiendo existencia (${state.existencia.size} claves)…`);
+        await publicarCiclico(folio, {}, state.existencia);
+      }
+    })(), 30000, 'publicación');
+
+    setStatus(`✅ Publicado: ${folio}`);
+    alert(`✅ Cíclico publicado\nFolio: ${folio}\nClaves existencia: ${state.existencia.size || 0}\n\nUsa “Verificar publicación” para confirmar en la nube.`);
   } catch (e) {
     console.error('Publicar folio error:', e);
-    alert('❌ Error al publicar en Firebase: ' + (e?.message || e));
+    setStatus(`❌ Error publicando: ${e?.message || e}`);
+    alert('❌ Error al publicar: ' + (e?.message || e));
   } finally {
     btnPublicar.disabled = false;
     btnPublicar.textContent = oldText || 'Publicar cíclico';
   }
 });
 
-let stopEscucha=null;
-btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); setText('folioStatus',`Folio cargado de la nube: ${folio}`); if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,()=>{}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e?.message||e)); } });
-btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); setText('folioStatus',`Existencia actualizada en nube para: ${folio}`); alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e?.message||e)); } });
-(function(){ const params=new URLSearchParams(location.search); const f=params.get('folio'); if(f && folioInput){ folioInput.value=f.toUpperCase(); setText('folioStatus',`Folio cargado desde URL: ${f.toUpperCase()}`); } })();
+/* Verificar publicación */
+btnVerificar?.addEventListener('click', async ()=>{
+  const folio = (folioInput?.value || '').trim();
+  if (!folio) { alert('Escribe o genera un folio.'); return; }
+  try{
+    setStatus('Verificando en Firestore…');
+    const snap = await getDoc(doc(db, 'ciclicos', folio));
+    if (!snap.exists()){
+      setStatus('No existe el documento del folio en Firestore.');
+      alert('ℹ️ No se encontró el folio en Firestore. Aún no se publicó o falló.');
+      return;
+    }
+    const exiSnap = await getDocs(collection(db, `ciclicos/${folio}/existencia`));
+    const count = exiSnap.size;
+    setStatus(`Folio existe. Claves de existencia: ${count}`);
+    alert(`✅ Folio encontrado en Firestore.\nFolio: ${folio}\nClaves de existencia: ${count}`);
+  }catch(e){
+    setStatus(`❌ Error verificando: ${e?.message || e}`);
+    alert('❌ Error verificando: ' + (e?.message || e));
+  }
+});
 
-/* ---------------- Manejo de códigos ---------------- */
+let stopEscucha=null;
+btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); setStatus(`Folio cargado de la nube: ${folio}`); if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,()=>{}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e?.message||e)); } });
+btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); setStatus(`Existencia actualizada en nube para: ${folio}`); alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e?.message||e)); } });
+(function(){ const params=new URLSearchParams(location.search); const f=params.get('folio'); if(f && folioInput){ folioInput.value=f.toUpperCase(); setStatus(`Folio cargado desde URL: ${f.toUpperCase()}`); } })();
+
+/* ---------------- Escaneos (cámara + manual) ---------------- */
 function handleKeyFromCode(code){
   let key=null, ok=true;
   if(/^\d{6,}$/.test(code)){ const it=state.catalog.get(code); if(it) key=toKey(it.MOD,it.COLOR,it.TALLA); else { ok=false; key='[NO ENCONTRADO] '+code; } }
@@ -430,7 +479,7 @@ function handleCode(code){
   if(el('chkBeep')?.checked && audioReady) aOK.play().catch(()=>{});
   if(el('chkAuto')?.checked){ state.scans.push(key); refreshUI(); } else { const si=el('scanInput'); if(si) si.value=key; }
   setText('lastStatus','Leído: '+code);
-  const folio=(folioInput?.value||'').trim();
+  const folio=(el('folioInput')?.value||'').trim();
   if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
 }
 el('scanInput')?.addEventListener('keydown',e=>{
@@ -439,7 +488,7 @@ el('scanInput')?.addEventListener('keydown',e=>{
   if(!ok){ if(el('chkBeep')?.checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
   if(el('chkBeep')?.checked && audioReady) aOK.play().catch(()=>{});
   state.scans.push(key); refreshUI();
-  const folio=(folioInput?.value||'').trim();
+  const folio=(el('folioInput')?.value||'').trim();
   if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
 });
 
@@ -455,7 +504,7 @@ function saveHist(nombre='Cíclico'){ const hist=JSON.parse(localStorage.getItem
 el('btnGuardarHistorico')?.addEventListener('click', ()=>{ const nombre=prompt('Nombre del conteo / folio','Cíclico'); if(!nombre) return; saveHist(nombre); });
 el('btnNuevaSesion')?.addEventListener('click', ()=>{ state.scans=[]; refreshUI(); setText('lastStatus','Sesión reiniciada.'); });
 
-/* ---------------- Inicialización DOM ---------------- */
+/* ---------------- Init ---------------- */
 window.addEventListener('DOMContentLoaded', () => {
   try{
     const raw=localStorage.getItem('catalogo_fixed_v1');
