@@ -199,6 +199,14 @@
 </div>
 
 <script type="module">
+/* --------- Captura GLOBAL de errores para depurar --------- */
+window.addEventListener('error', (ev) => {
+  alert('Error JS: ' + (ev?.error?.message || ev.message || ev));
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  alert('Promesa no manejada: ' + (ev?.reason?.message || ev.reason || ev));
+});
+
 /* ---------------- Tabs ---------------- */
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:document.getElementById('tab-importar'),escanear:document.getElementById('tab-escanear'),reporte:document.getElementById('tab-reporte'),historial:document.getElementById('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,el])=>{el.classList.toggle('hidden',k!==t);el.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
 
@@ -358,10 +366,41 @@ const folioStatus=document.getElementById('folioStatus');
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
 btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); folioInput.value=folio; folioStatus.textContent=`Folio generado: ${folio}`; });
-btnPublicar?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim()||generarFolio(); folioInput.value=folio; if(!state.existencia||!state.existencia.size){ if(!confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?')) return; } const meta={almacen: selAlmacen.value || 'GLOBAL', dispositivo: deviceId}; try{ await publicarCiclico(folio, meta, state.existencia); folioStatus.textContent=`Publicado en nube: ${folio}`; alert(`Cíclico publicado en Firebase:\n\nFolio: ${folio}\nAlmacén: ${meta.almacen}\n\nComparte el link con ?folio=${folio}`); }catch(e){ alert('Error al publicar en Firebase: '+(e.message||e)); } });
+
+/* NUEVO HANDLER con feedback y errores visibles */
+btnPublicar?.addEventListener('click', async () => {
+  console.log('Click publicar folio');
+  const folio = (folioInput.value || '').trim() || generarFolio();
+  folioInput.value = folio;
+
+  btnPublicar.disabled = true;
+  const oldText = btnPublicar.textContent;
+  btnPublicar.textContent = 'Publicando...';
+
+  try {
+    if (!state.existencia || !state.existencia.size) {
+      const ok = confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?');
+      if (!ok) return;
+    }
+    const meta = { almacen: selAlmacen.value || 'GLOBAL', dispositivo: deviceId };
+    if (!db) throw new Error('Firebase no inicializado');
+
+    await publicarCiclico(folio, meta, state.existencia);
+
+    folioStatus.textContent = `Publicado en nube: ${folio}`;
+    alert(`✅ Cíclico publicado en Firebase\n\nFolio: ${folio}\nAlmacén: ${meta.almacen}\n\nComparte el link con ?folio=${folio}`);
+  } catch (e) {
+    console.error('Publicar folio error:', e);
+    alert('❌ Error al publicar en Firebase: ' + (e?.message || e));
+  } finally {
+    btnPublicar.disabled = false;
+    btnPublicar.textContent = oldText || 'Publicar cíclico';
+  }
+});
+
 let stopEscucha=null;
-btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); folioStatus.textContent=`Folio cargado de la nube: ${folio}`; if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,(rows)=>{/* aquí podrías pintar un feed si quieres */}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e.message||e)); } });
-btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); folioStatus.textContent=`Existencia actualizada en nube para: ${folio}`; alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e.message||e)); } });
+btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); folioStatus.textContent=`Folio cargado de la nube: ${folio}`; if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,(rows)=>{/* pintar feed si quieres */}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e?.message||e)); } });
+btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); folioStatus.textContent=`Existencia actualizada en nube para: ${folio}`; alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e?.message||e)); } });
 (function(){ const params=new URLSearchParams(location.search); const f=params.get('folio'); if(f){ folioInput.value=f.toUpperCase(); folioStatus.textContent=`Folio cargado desde URL: ${f.toUpperCase()}`; } })();
 
 /* ---------------- Manejo de códigos (cámara + manual) ---------------- */
@@ -381,7 +420,7 @@ function handleCode(code){
   const folio=(document.getElementById('folioInput').value||'').trim();
   if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
 }
-document.getElementById('btnPermisos').addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); alert('Permisos listos.'); } catch(e){ alert('No se pudo otorgar permisos: '+(e.message||e)); } });
+document.getElementById('btnPermisos').addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); alert('Permisos listos.'); } catch(e){ alert('No se pudo otorgar permisos: '+(e?.message||e)); } });
 document.getElementById('btnCamStart').addEventListener('click', async()=>{ await listCameras(); await startCamera(); });
 document.getElementById('btnCamStop').addEventListener('click', ()=>{ stopCamera(); });
 
