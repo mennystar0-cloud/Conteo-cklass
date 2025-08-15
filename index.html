@@ -154,6 +154,8 @@
           <div class="text-xs text-gray-600 mt-2" id="lastStatus">—</div>
         </div>
       </div>
+
+      <div class="mt-3 text-xs text-gray-500 mono" id="diag"></div>
     </div>
   </section>
 
@@ -199,21 +201,26 @@
 </div>
 
 <script type="module">
-/* --------- Captura GLOBAL de errores para depurar --------- */
-window.addEventListener('error', (ev) => {
-  alert('Error JS: ' + (ev?.error?.message || ev.message || ev));
-});
-window.addEventListener('unhandledrejection', (ev) => {
-  alert('Promesa no manejada: ' + (ev?.reason?.message || ev.reason || ev));
-});
+/* --------- Debug visible (muestra error + stack en pantalla) --------- */
+function showDiag(msg, err){
+  const d = document.getElementById('diag') || document.body.appendChild(
+    Object.assign(document.createElement('div'), { id:'diag', className:'mono text-xs p-2 bg-yellow-50 border mt-2' })
+  );
+  d.innerHTML = `<div><b>Debug:</b> ${msg}</div>${err?.stack?`<pre class="whitespace-pre-wrap">${err.stack}</pre>`:''}`;
+}
+window.addEventListener('error', ev => { alert('Error JS: ' + (ev?.error?.message || ev.message || ev)); showDiag(ev?.error?.message || ev.message, ev?.error); });
+window.addEventListener('unhandledrejection', ev => { alert('Promesa no manejada: ' + (ev?.reason?.message || ev.reason || ev)); showDiag(ev?.reason?.message || ev.reason, ev?.reason); });
 
 /* ---------------- Tabs ---------------- */
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:document.getElementById('tab-importar'),escanear:document.getElementById('tab-escanear'),reporte:document.getElementById('tab-reporte'),historial:document.getElementById('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,el])=>{el.classList.toggle('hidden',k!==t);el.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
 
-/* ---------------- Estado ---------------- */
+/* ---------------- Estado + helpers seguros ---------------- */
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
 const deviceId=(localStorage.getItem('conteo_device_id')||(crypto.randomUUID?.()||String(Math.random()).slice(2))); localStorage.setItem('conteo_device_id',deviceId);
 const $=s=>document.querySelector(s);
+function el(id){ return document.getElementById(id); }
+function setText(id, txt){ const e=el(id); if(e) e.textContent=txt; }
+function setHTML(id, html){ const e=el(id); if(e) e.innerHTML=html; }
 
 /* ---------------- Audio (beep OK / ERROR) ---------------- */
 let aOK=new Audio(), aERR=new Audio(); let audioReady=false;
@@ -229,7 +236,14 @@ const cleanSpaces = s => norm(s).replace(/\s{2,}/g,' ');
 function toKey(m,c,t){ return `${cleanSpaces(m)}|${cleanSpaces(c)}|${cleanSpaces(t)}`.toUpperCase(); }
 function renderTable(map){return `<table class='min-w-full text-sm table'><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class='px-2'>${k}</td><td class='px-2 text-right'>${v}</td></tr>`).join('')}</tbody></table>`;}
 function group(list){const m=new Map();for(const k of list) if(!String(k).startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1);return m;}
-function refreshUI(){ $('#catalogoStatus').textContent = `${state.catalog.size} códigos cargados.`; $('#existenciaCSVStatus').textContent = `${state.existencia.size||0} claves.`; $('#existenciaStatus').textContent = `${state.existencia.size||0} claves.`; $('#existenciaPreview').innerHTML = renderTable(state.existencia); $('#scanLog').innerHTML = '<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>'; $('#scanGrouped').innerHTML = renderTable(group(state.scans)); }
+function refreshUI(){
+  setText('catalogoStatus', `${state.catalog.size} códigos cargados.`);
+  setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`);
+  setText('existenciaStatus', `${state.existencia.size||0} claves.`);
+  setHTML('existenciaPreview', renderTable(state.existencia));
+  setHTML('scanLog', '<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>');
+  setHTML('scanGrouped', renderTable(group(state.scans)));
+}
 
 /* ---------------- Catálogo (robusto) ---------------- */
 function procesarCatalogoDesdeTexto(text){
@@ -248,15 +262,15 @@ function procesarCatalogoDesdeTexto(text){
     ok++;
   }
   localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}));
-  document.getElementById('catalogoStatus').textContent=`${ok} registros cargados. Saltados: ${skip}${samples.length?` (ej: ${samples.join(' | ')})`:''}`;
-  document.getElementById('catalogoGuardadoStatus').textContent='Catálogo guardado (local).';
+  setText('catalogoStatus',`${ok} registros cargados. Saltados: ${skip}${samples.length?` (ej: ${samples.join(' | ')})`:''}`);
+  setText('catalogoGuardadoStatus','Catálogo guardado (local).');
   refreshUI();
 }
-document.getElementById('fileCatalogo').addEventListener('change', async e=>{const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); procesarCatalogoDesdeTexto(t);});
-document.getElementById('btnCargarCatalogoURL').addEventListener('click', async ()=>{ const url=$('#catalogoURL').value.trim(); if(!url) return; try{ const r=await fetch(url,{cache:'no-store'}); const t=await r.text(); procesarCatalogoDesdeTexto(t);}catch(e){alert('No se pudo cargar el CSV: '+e.message);} });
-document.getElementById('btnUsarCatalogoGuardado').addEventListener('click', ()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo guardado.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); refreshUI(); $('#catalogoGuardadoStatus').textContent='Usando catálogo guardado.'; });
-document.getElementById('btnFijarCatalogo').addEventListener('click', ()=>{ if(!state.catalog.size) return alert('Carga un catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); $('#catalogoGuardadoStatus').textContent='Catálogo guardado.'; });
-document.getElementById('btnBorrarCatalogo').addEventListener('click', ()=>{ localStorage.removeItem('catalogo_fixed_v1'); $('#catalogoGuardadoStatus').textContent='Catálogo eliminado.'; });
+el('fileCatalogo')?.addEventListener('change', async e=>{const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); procesarCatalogoDesdeTexto(t);});
+el('btnCargarCatalogoURL')?.addEventListener('click', async ()=>{ const url=el('catalogoURL')?.value?.trim(); if(!url) return; try{ const r=await fetch(url,{cache:'no-store'}); const t=await r.text(); procesarCatalogoDesdeTexto(t);}catch(e){alert('No se pudo cargar el CSV: '+e.message);} });
+el('btnUsarCatalogoGuardado')?.addEventListener('click', ()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo guardado.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); refreshUI(); setText('catalogoGuardadoStatus','Usando catálogo guardado.'); });
+el('btnFijarCatalogo')?.addEventListener('click', ()=>{ if(!state.catalog.size) return alert('Carga un catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); setText('catalogoGuardadoStatus','Catálogo guardado.'); });
+el('btnBorrarCatalogo')?.addEventListener('click', ()=>{ localStorage.removeItem('catalogo_fixed_v1'); setText('catalogoGuardadoStatus','Catálogo eliminado.'); });
 
 /* ---------------- Existencia (robusto CSV/pegado) ---------------- */
 function parseExistenciaCSV(text){
@@ -292,28 +306,30 @@ function parseExistenciaCSV(text){
     ok++;
   }
   state.existencia=acc;
-  $('#existenciaCSVStatus').textContent=`${ok} claves cargadas. Saltadas: ${skip}${samples.length?` (ej: ${samples.join(' | ')})`:''}`;
-  $('#existenciaStatus').textContent=`${acc.size} claves.`; $('#existenciaPreview').innerHTML=renderTable(acc); refreshUI();
+  setText('existenciaCSVStatus',`${ok} claves cargadas. Saltadas: ${skip}${samples.length?` (ej: ${samples.join(' | ')})`:''}`);
+  setText('existenciaStatus',`${acc.size} claves.`);
+  setHTML('existenciaPreview',renderTable(acc));
+  refreshUI();
 }
-document.getElementById('fileExistenciaCSV').addEventListener('change', async e=>{ const t=await e.target.files?.[0]?.text(); if(!t) return; parseExistenciaCSV(t); });
-document.getElementById('btnProcesarExistencia').addEventListener('click',()=>{ const raw=(document.getElementById('existenciaInput').value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
-document.getElementById('btnLimpiarExistencia').addEventListener('click',()=>{ $('#existenciaInput').value=''; state.existencia=new Map(); $('#existenciaPreview').innerHTML=''; $('#existenciaStatus').textContent='0 registros.'; refreshUI(); });
+el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const t=await e.target.files?.[0]?.text(); if(!t) return; parseExistenciaCSV(t); });
+el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
+el('btnLimpiarExistencia')?.addEventListener('click',()=>{ if(el('existenciaInput')) el('existenciaInput').value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
 /* ---------------- Cámara (BarcodeDetector + Quagga fallback) ---------------- */
-const video=document.getElementById('videoCam');
-const cameraSelect=document.getElementById('cameraSelect');
+const video=el('videoCam'); const cameraSelect=el('cameraSelect');
 let stream=null, scanning=false, lastCode='', lastTs=0;
-
-async function listCameras(){ const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]); const cams=(devices||[]).filter(d=>d.kind==='videoinput'); cameraSelect.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}">${c.label||('Cámara '+(i+1))}</option>`).join(''); }
-async function startCamera(){ try{ const deviceId=cameraSelect.value||undefined; stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', deviceId: deviceId?{exact:deviceId}:undefined}}); video.srcObject=stream; await video.play(); scanning=true; lastCode=''; lastTs=0; tryScanBD(); }catch(e){ alert('No se pudo iniciar cámara: '+(e.message||e)); } }
+async function listCameras(){ const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]); const cams=(devices||[]).filter(d=>d.kind==='videoinput'); if(cameraSelect) cameraSelect.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}">${c.label||('Cámara '+(i+1))}</option>`).join(''); }
+async function startCamera(){ try{ const deviceId=cameraSelect?.value||undefined; stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', deviceId: deviceId?{exact:deviceId}:undefined}}); if(video){ video.srcObject=stream; await video.play(); } scanning=true; lastCode=''; lastTs=0; tryScanBD(); }catch(e){ alert('No se pudo iniciar cámara: '+(e.message||e)); } }
 function stopCamera(){ scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } if(window.Quagga){ try{ Quagga.stop(); }catch{} } }
-async function tryScanBD(){ if(!('BarcodeDetector' in window)){ return startQuagga(); } let detector; try{ detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf']}); } catch{ return startQuagga(); } const tick=async()=>{ if(!scanning) return; try{ const res=await detector.detect(video); if(res&&res.length){ const code=String(res[0].rawValue||'').trim(); if(code) handleCode(code); } }catch{} requestAnimationFrame(tick); }; tick(); }
+async function tryScanBD(){ if(!video) return; if(!('BarcodeDetector' in window)){ return startQuagga(); } let detector; try{ detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf']}); } catch{ return startQuagga(); } const tick=async()=>{ if(!scanning) return; try{ const res=await detector.detect(video); if(res&&res.length){ const code=String(res[0].rawValue||'').trim(); if(code) handleCode(code); } }catch{} requestAnimationFrame(tick); }; tick(); }
 function startQuagga(){ if(!window.Quagga) return alert('Quagga no disponible'); Quagga.init({inputStream:{name:'Live',type:'LiveStream',target:video,constraints:{facingMode:'environment'}},decoder:{readers:['ean_reader','code_128_reader','upc_reader','code_39_reader','ean_8_reader']}}, err=>{ if(err){ alert('No se pudo iniciar Quagga: '+err); return; } Quagga.start(); scanning=true; Quagga.onDetected(d=>{ const code=(d&&d.codeResult&&d.codeResult.code)||''; if(code) handleCode(code); }); }); }
+el('btnPermisos')?.addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); alert('Permisos listos.'); } catch(e){ alert('No se pudo otorgar permisos: '+(e?.message||e)); } });
+el('btnCamStart')?.addEventListener('click', async()=>{ await listCameras(); await startCamera(); });
+el('btnCamStop')?.addEventListener('click', ()=>{ stopCamera(); });
 
 /* ---------------- Firebase (CDN v12) ---------------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, onSnapshot, query, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
   authDomain: "cklass-conteo.firebaseapp.com",
@@ -343,9 +359,9 @@ async function cargarExistenciaDeNube(folio) {
   const acc = new Map();
   snap.forEach(d => { const { clave, qty } = d.data(); if (clave) acc.set(clave, qty || 0); });
   state.existencia = acc;
-  $('#existenciaPreview').innerHTML = renderTable(acc);
-  $('#existenciaCSVStatus').textContent = `${acc.size} claves (nube).`;
-  $('#existenciaStatus').textContent = `${acc.size} claves (nube).`;
+  setHTML('existenciaPreview', renderTable(acc));
+  setText('existenciaCSVStatus', `${acc.size} claves (nube).`);
+  setText('existenciaStatus', `${acc.size} claves (nube).`);
   refreshUI();
 }
 async function registrarEscaneoEnNube(folio, { clave, operador = '', dispositivo = '' }) {
@@ -358,20 +374,19 @@ function escucharEscaneosEnVivo(folio, cb) {
 }
 
 /* ---------------- Folios (UI + acciones) ---------------- */
-const selAlmacen=document.getElementById('selAlmacen'); const folioInput=document.getElementById('folioInput');
-const btnGenerar=document.getElementById('btnGenerarFolio'); const btnPublicar=document.getElementById('btnPublicarFolio');
-const btnCargarFol=document.getElementById('btnCargarFolio'); const btnActExi=document.getElementById('btnActualizarExistencia');
-const folioStatus=document.getElementById('folioStatus');
+const selAlmacen=el('selAlmacen'); const folioInput=el('folioInput');
+const btnGenerar=el('btnGenerarFolio'); const btnPublicar=el('btnPublicarFolio');
+const btnCargarFol=el('btnCargarFolio'); const btnActExi=el('btnActualizarExistencia');
+const folioStatus=el('folioStatus');
 
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
-btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); folioInput.value=folio; folioStatus.textContent=`Folio generado: ${folio}`; });
+function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
+btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); if(folioInput) folioInput.value=folio; setText('folioStatus',`Folio generado: ${folio}`); });
 
-/* NUEVO HANDLER con feedback y errores visibles */
+/* Handler con feedback y errores visibles */
 btnPublicar?.addEventListener('click', async () => {
-  console.log('Click publicar folio');
-  const folio = (folioInput.value || '').trim() || generarFolio();
-  folioInput.value = folio;
+  const folio = (folioInput?.value || '').trim() || generarFolio();
+  if (folioInput) folioInput.value = folio;
 
   btnPublicar.disabled = true;
   const oldText = btnPublicar.textContent;
@@ -382,12 +397,10 @@ btnPublicar?.addEventListener('click', async () => {
       const ok = confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?');
       if (!ok) return;
     }
-    const meta = { almacen: selAlmacen.value || 'GLOBAL', dispositivo: deviceId };
+    const meta = { almacen: selAlmacen?.value || 'GLOBAL', dispositivo: deviceId };
     if (!db) throw new Error('Firebase no inicializado');
-
     await publicarCiclico(folio, meta, state.existencia);
-
-    folioStatus.textContent = `Publicado en nube: ${folio}`;
+    setText('folioStatus', `Publicado en nube: ${folio}`);
     alert(`✅ Cíclico publicado en Firebase\n\nFolio: ${folio}\nAlmacén: ${meta.almacen}\n\nComparte el link con ?folio=${folio}`);
   } catch (e) {
     console.error('Publicar folio error:', e);
@@ -399,11 +412,11 @@ btnPublicar?.addEventListener('click', async () => {
 });
 
 let stopEscucha=null;
-btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); folioStatus.textContent=`Folio cargado de la nube: ${folio}`; if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,(rows)=>{/* pintar feed si quieres */}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e?.message||e)); } });
-btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); folioStatus.textContent=`Existencia actualizada en nube para: ${folio}`; alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e?.message||e)); } });
-(function(){ const params=new URLSearchParams(location.search); const f=params.get('folio'); if(f){ folioInput.value=f.toUpperCase(); folioStatus.textContent=`Folio cargado desde URL: ${f.toUpperCase()}`; } })();
+btnCargarFol?.addEventListener('click', async ()=>{ const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } try{ await cargarExistenciaDeNube(folio); setText('folioStatus',`Folio cargado de la nube: ${folio}`); if(stopEscucha) stopEscucha(); stopEscucha=escucharEscaneosEnVivo(folio,()=>{}); alert(`Folio ${folio} listo (existencia desde nube). Ya puedes escanear en varios celulares.`); }catch(e){ alert('Error al cargar de Firebase: '+(e?.message||e)); } });
+btnActExi?.addEventListener('click', async ()=>{ const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; } if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla para publicar.'); return; } try{ await publicarCiclico(folio, {}, state.existencia); setText('folioStatus',`Existencia actualizada en nube para: ${folio}`); alert(`Existencia actualizada en Firebase para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e?.message||e)); } });
+(function(){ const params=new URLSearchParams(location.search); const f=params.get('folio'); if(f && folioInput){ folioInput.value=f.toUpperCase(); setText('folioStatus',`Folio cargado desde URL: ${f.toUpperCase()}`); } })();
 
-/* ---------------- Manejo de códigos (cámara + manual) ---------------- */
+/* ---------------- Manejo de códigos ---------------- */
 function handleKeyFromCode(code){
   let key=null, ok=true;
   if(/^\d{6,}$/.test(code)){ const it=state.catalog.get(code); if(it) key=toKey(it.MOD,it.COLOR,it.TALLA); else { ok=false; key='[NO ENCONTRADO] '+code; } }
@@ -413,43 +426,44 @@ function handleKeyFromCode(code){
 function handleCode(code){
   const now=Date.now(); if(code===lastCode && now-lastTs<900) return; lastCode=code; lastTs=now;
   const {key, ok}=handleKeyFromCode(code);
-  if(!ok){ if(document.getElementById('chkBeep').checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
-  if(document.getElementById('chkBeep').checked && audioReady) aOK.play().catch(()=>{});
-  if(document.getElementById('chkAuto').checked){ state.scans.push(key); refreshUI(); } else { document.getElementById('scanInput').value=key; }
-  document.getElementById('lastStatus').textContent='Leído: '+code;
-  const folio=(document.getElementById('folioInput').value||'').trim();
+  if(!ok){ if(el('chkBeep')?.checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
+  if(el('chkBeep')?.checked && audioReady) aOK.play().catch(()=>{});
+  if(el('chkAuto')?.checked){ state.scans.push(key); refreshUI(); } else { const si=el('scanInput'); if(si) si.value=key; }
+  setText('lastStatus','Leído: '+code);
+  const folio=(folioInput?.value||'').trim();
   if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
 }
-document.getElementById('btnPermisos').addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); alert('Permisos listos.'); } catch(e){ alert('No se pudo otorgar permisos: '+(e?.message||e)); } });
-document.getElementById('btnCamStart').addEventListener('click', async()=>{ await listCameras(); await startCamera(); });
-document.getElementById('btnCamStop').addEventListener('click', ()=>{ stopCamera(); });
-
-/* Manual (Enter) */
-document.getElementById('scanInput').addEventListener('keydown',e=>{
+el('scanInput')?.addEventListener('keydown',e=>{
   if(e.key!=='Enter') return; const v=e.target.value.trim(); e.target.value=''; if(!v) return;
   const {key, ok}=handleKeyFromCode(v);
-  if(!ok){ if(document.getElementById('chkBeep').checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
-  if(document.getElementById('chkBeep').checked && audioReady) aOK.play().catch(()=>{});
+  if(!ok){ if(el('chkBeep')?.checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
+  if(el('chkBeep')?.checked && audioReady) aOK.play().catch(()=>{});
   state.scans.push(key); refreshUI();
-  const folio=(document.getElementById('folioInput').value||'').trim();
+  const folio=(folioInput?.value||'').trim();
   if(folio){ registrarEscaneoEnNube(folio, { clave:key, operador:'', dispositivo:deviceId }).catch(()=>{}); }
 });
 
 /* ---------------- Reporte ---------------- */
 function computeReport(){ const esc=group(state.scans), exi=state.existencia, sob=new Map(), fal=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); keys.forEach(k=>{ const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sob.set(k,e-x); if(x-e>0) fal.set(k,x-e); }); return {escT,sob,falt:fal}; }
-document.getElementById('btnGenerarReporte').addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); document.getElementById('tablaEscaneados').innerHTML=renderTable(escT); document.getElementById('tablaSobrantes').innerHTML=renderTable(sob); document.getElementById('tablaFaltantes').innerHTML=renderTable(falt); });
-document.getElementById('btnExportarCSV').addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(name,map)=>{ for(const [k,v] of map) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
-document.getElementById('btnRespaldarJSON').addEventListener('click', ()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
+el('btnGenerarReporte')?.addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); setHTML('tablaEscaneados',renderTable(escT)); setHTML('tablaSobrantes',renderTable(sob)); setHTML('tablaFaltantes',renderTable(falt)); });
+el('btnExportarCSV')?.addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(name,map)=>{ for(const [k,v] of map) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
+el('btnRespaldarJSON')?.addEventListener('click', ()=>{ const d={catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], existencia:[...state.existencia], scans:state.scans}; const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='respaldo_conteo_cklass.json'; a.click(); URL.revokeObjectURL(url); });
 
 /* ---------------- Historial local ---------------- */
-function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); document.getElementById('histList').innerHTML=html.join(''); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#escanear'; window.dispatchEvent(new HashChangeEvent('hashchange')); })); }
+function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); setHTML('histList',html.join('')); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#escanear'; window.dispatchEvent(new HashChangeEvent('hashchange')); })); }
 function saveHist(nombre='Cíclico'){ const hist=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const payload={ts:Date.now(), nombre, scans:[...state.scans], existencia:Object.fromEntries(state.existencia), catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}; hist.unshift(payload); localStorage.setItem('conteo_cklass_hist', JSON.stringify(hist.slice(0,50))); renderHist(); alert('Histórico guardado.'); }
-document.getElementById('btnGuardarHistorico').addEventListener('click', ()=>{ const nombre=prompt('Nombre del conteo / folio','Cíclico'); if(!nombre) return; saveHist(nombre); });
-document.getElementById('btnNuevaSesion').addEventListener('click', ()=>{ state.scans=[]; refreshUI(); document.getElementById('lastStatus').textContent='Sesión reiniciada.'; });
-renderHist();
+el('btnGuardarHistorico')?.addEventListener('click', ()=>{ const nombre=prompt('Nombre del conteo / folio','Cíclico'); if(!nombre) return; saveHist(nombre); });
+el('btnNuevaSesion')?.addEventListener('click', ()=>{ state.scans=[]; refreshUI(); setText('lastStatus','Sesión reiniciada.'); });
 
-/* ---------------- Inicialización ---------------- */
-(function(){ const raw=localStorage.getItem('catalogo_fixed_v1'); if(raw){ try{ const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]);}catch{} } refreshUI(); })();
+/* ---------------- Inicialización DOM ---------------- */
+window.addEventListener('DOMContentLoaded', () => {
+  try{
+    const raw=localStorage.getItem('catalogo_fixed_v1');
+    if(raw){ const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); }
+  }catch{}
+  refreshUI();
+  renderHist();
+});
 </script>
 </body>
 </html>
