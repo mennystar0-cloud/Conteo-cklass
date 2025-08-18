@@ -23,6 +23,8 @@
     .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
     .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
     .cam-compact{height:45vh;max-height:420px}
+    .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
+    details>summary{cursor:pointer;user-select:none}
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -46,9 +48,9 @@
   <section id="tab-importar" class="tab-pane block">
     <div class="grid md:grid-cols-2 gap-4">
       <!-- Catálogo -->
-      <div class="bg-white rounded-2xl shadow p-4">
+      <div class="card">
         <h2 class="font-semibold mb-2">Catálogo maestro (CSV) — se carga 1 vez</h2>
-        <p class="text-xs text-gray-600 mb-2">Columnas aceptadas (cualquier variante): <code>CODIGO DE BARRAS / EAN / UPC</code>, <code>MOD (MODELO/SKU)</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code> (opcional).</p>
+        <p class="text-xs text-gray-600 mb-2">Columnas aceptadas (variante): <code>CODIGO DE BARRAS / EAN / UPC</code>, <code>MOD (MODELO/SKU)</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code> (opcional).</p>
         <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div class="flex gap-2 mt-2">
           <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar guardado</button>
@@ -57,12 +59,33 @@
         </div>
         <div id="catalogoStatus" class="text-xs text-gray-600 mt-2">Sin cargar.</div>
         <div id="catalogoGuardadoStatus" class="text-xs text-gray-600 mt-1">—</div>
+
+        <details class="mt-3">
+          <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
+          <div class="text-xs mono mt-2">
+            <div id="catalogDiag">—</div>
+            <div id="catalogFirstRows" class="mt-2"></div>
+            <div class="mt-3 p-2 bg-gray-50 rounded-lg">
+              <div class="text-[11px] mb-1">Si no detecta encabezados, mapea manualmente:</div>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="text-[11px]">Código de barras<select id="mapBC" class="border rounded p-1 text-xs"></select></label>
+                <label class="text-[11px]">MOD<select id="mapMOD" class="border rounded p-1 text-xs"></select></label>
+                <label class="text-[11px]">COLOR<select id="mapCOLOR" class="border rounded p-1 text-xs"></select></label>
+                <label class="text-[11px]">TALLA<select id="mapTALLA" class="border rounded p-1 text-xs"></select></label>
+                <label class="text-[11px]">TEMPORADA<select id="mapTEMP" class="border rounded p-1 text-xs"></select></label>
+              </div>
+              <div class="mt-2">
+                <button id="btnAplicarMapa" class="btn bg-gray-200">Aplicar mapeo manual</button>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
 
       <!-- Existencia -->
-      <div class="bg-white rounded-2xl shadow p-4">
+      <div class="card">
         <h2 class="font-semibold mb-2">Existencia física (CSV / pegado)</h2>
-        <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code> · o <code>000-24,NEGRO    220    4</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code> · ó <code>000-24,NEGRO    220    4</code>.</p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
         <div class="bg-gray-50 rounded-xl p-2 mt-3">
@@ -73,17 +96,21 @@
             <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
           </div>
           <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
+          <details class="mt-2">
+            <summary class="text-sm font-medium">Diagnóstico existencia</summary>
+            <div class="text-xs mono mt-2" id="existDiag">—</div>
+          </details>
         </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-2xl shadow p-4 mt-4">
+    <div class="card mt-4">
       <h3 class="font-semibold mb-2">Vista previa existencia agrupada</h3>
       <div id="existenciaPreview" class="overflow-auto max-h-64 border rounded-xl"></div>
     </div>
 
     <!-- FOLIO -->
-    <div class="bg-white rounded-2xl shadow p-4 mt-4">
+    <div class="card mt-4">
       <h3 class="font-semibold mb-2">Folio de cíclico (nube)</h3>
       <div class="grid md:grid-cols-4 gap-2">
         <select id="selAlmacen" class="rounded-lg border border-gray-200 p-2 text-sm">
@@ -100,18 +127,17 @@
         <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (nube)</button>
         <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia</button>
         <button id="btnVerificarFolio" class="btn bg-gray-200">Verificar publicación</button>
-        <!-- Nuevos botones catálogo en nube -->
         <button id="btnSubirCatalogo" class="btn bg-fuchsia-600 text-white">Subir catálogo al folio</button>
         <button id="btnCargarCatalogoNube" class="btn bg-fuchsia-200">Cargar catálogo (nube)</button>
       </div>
-      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue solo.</p>
+      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue solo (catálogo + existencia).</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
     </div>
   </section>
 
   <!-- Escanear -->
   <section id="tab-escanear" class="tab-pane hidden">
-    <div class="bg-white rounded-2xl shadow p-4">
+    <div class="card">
       <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
 
       <div class="flex flex-wrap items-center gap-2 mb-2">
@@ -152,7 +178,7 @@
 
   <!-- Reporte -->
   <section id="tab-reporte" class="tab-pane hidden">
-    <div class="bg-white rounded-2xl shadow p-4">
+    <div class="card">
       <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
       <div class="flex flex-wrap gap-2 mb-3 no-print">
         <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
@@ -168,7 +194,7 @@
 
   <!-- Historial -->
   <section id="tab-historial" class="tab-pane hidden">
-    <div class="bg-white rounded-2xl shadow p-4">
+    <div class="card">
       <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
       <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
     </div>
@@ -180,7 +206,7 @@
 </div>
 
 <script type="module">
-/* ===== Helpers UI seguros ===== */
+/* ===== Helpers UI ===== */
 const $ = s => document.querySelector(s);
 const el = id => document.getElementById(id);
 function setText(id, txt){ const e=el(id); if(e) e.textContent=txt; }
@@ -201,10 +227,15 @@ function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos 
 
 /* ===== Audio OK/ERR ===== */
 let aOK=new Audio(), aERR=new Audio(), audioReady=false;
-function prepAudio(){ try{ aOK.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; aERR.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10 IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'.replace(' ', ''); audioReady=true; }catch{} }
+function prepAudio(){ try{ aOK.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; aERR.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; audioReady=true; }catch{} }
 document.body.addEventListener('click', ()=>{ if(!audioReady) prepAudio(); }, {once:true});
 
 /* ===== CSV utils robustas ===== */
+async function readFileSmart(file){
+  try { const t = await file.text(); if (t && t.split(/\r?\n/).filter(l=>l.trim()).length > 1) return t; } catch {}
+  try { const ab = await file.arrayBuffer(); const dec = new TextDecoder('windows-1252'); const t = dec.decode(ab); return t; } catch {}
+  return await file.text();
+}
 const norm = s => (s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
 function canon(s){
   return norm(s)
@@ -216,9 +247,7 @@ function canon(s){
 function detectDelimiter(sample){
   if(sample.includes('\t')) return '\t';
   const cand=[',',';','|'];
-  let best=',',max=-1;
-  for(const d of cand){ const c=(sample.match(new RegExp('\\'+d,'g'))||[]).length; if(c>max){max=c;best=d;} }
-  return best;
+  let best=',',max=-1; for(const d of cand){ const c=(sample.match(new RegExp('\\'+d,'g'))||[]).length; if(c>max){max=c;best=d;} } return best;
 }
 function splitCSVLineFlexible(line,delim){
   const out=[]; let cur='',q=false;
@@ -228,59 +257,34 @@ function splitCSVLineFlexible(line,delim){
     else if(ch===delim && !q){ out.push(cur); cur=''; }
     else { cur+=ch; }
   }
-  out.push(cur);
-  return out;
+  out.push(cur); return out;
 }
 
-/* ===== Catálogo SOLO desde archivo ===== */
-function procesarCatalogoDesdeTexto(text){
-  const raw = text.replace(/\r/g,'');
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (!lines.length){ alert('Catálogo vacío.'); return; }
+/* ===== Catálogo con mapeo manual ===== */
+let _lastCatRaw = '';
+let _lastCatDelim = ',';
+let _lastCatHeaders = [];
 
-  const delim   = detectDelimiter(lines[0]);
-  const header0 = splitCSVLineFlexible(lines[0], delim).map(norm);
-  const H       = header0.map(canon);
-
-  const idx = { BC:-1, MOD:-1, COLOR:-1, TALLA:-1, TEMP:-1 };
-  const wants = {
-    BC   : ['CODIGO BARRA','CODIGO DE BARRAS','COD BARRAS','EAN','UPC','CODIGO','CODIGODEBARRAS','CBARRAS'],
-    MOD  : ['MOD','MODELO','SKU','REFERENCIA','REF'],
-    COLOR: ['COLOR','COL','CLR'],
-    TALLA: ['TALLA','SIZE','NUMERO','NUM','NR'],
-    TEMP : ['TEMPORADA','TEMP','SEASON']
-  };
-  for (const [k, arr] of Object.entries(wants)){
-    for (const a of arr){
-      const pos = H.indexOf(a);
-      if (pos !== -1){ idx[k]=pos; break; }
-    }
-  }
-  if (idx.BC === -1){
-    for (let i=0;i<H.length;i++){
-      if (H[i].includes('COD') && H[i].includes('BARR')){ idx.BC = i; break; }
-    }
-  }
-  if (idx.BC === -1){
-    alert(
-      'No encontré la columna de CÓDIGO DE BARRAS.\n\n' +
-      'Encabezados detectados:\n- ' + header0.join('\n- ') +
-      '\n\nAsegúrate que exista una columna como: CODIGO DE BARRAS, CODIGO_BARRA, EAN o UPC.'
-    );
-    return;
-  }
-
+function fillMappingDropdowns(headers){
+  ['mapBC','mapMOD','mapCOLOR','mapTALLA','mapTEMP'].forEach(id=>{
+    const sel=el(id); if(!sel) return;
+    sel.innerHTML = `<option value="">—</option>` + headers.map((h,i)=>`<option value="${i}">${h}</option>`).join('');
+  });
+}
+function parseCatalogWithIndex(lines, delim, idx){
   state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
   let ok=0; const samples=[];
   for (let i=1;i<lines.length;i++){
-    const cols = splitCSVLineFlexible(lines[i], delim).map(norm);
-    const bc   = cols[idx.BC] || '';
+    if (!lines[i].trim()) continue;
+    const cols = splitCSVLineFlexible(lines[i], delim).map(v => norm(v.replace(/^"+|"+$/g,'')));
+    const safe = j => (j>=0 && j<cols.length) ? cols[j] : '';
+    const bc   = safe(idx.BC);
     if (!bc) continue;
 
-    const MOD  = idx.MOD  >=0 ? cols[idx.MOD]  : '';
-    const COLOR= idx.COLOR>=0 ? cols[idx.COLOR]: '';
-    const TALLA= idx.TALLA>=0 ? cols[idx.TALLA]: '';
-    const TEMP = idx.TEMP >=0 ? cols[idx.TEMP] : '';
+    const MOD  = safe(idx.MOD);
+    const COLOR= safe(idx.COLOR);
+    const TALLA= safe(idx.TALLA);
+    const TEMP = safe(idx.TEMP);
 
     state.catalog.set(bc, { MOD, COLOR, TALLA, TEMPORADA: TEMP });
 
@@ -301,12 +305,67 @@ function procesarCatalogoDesdeTexto(text){
 
   setText('catalogoStatus', `${ok} registros cargados.`);
   setText('catalogoGuardadoStatus','Catálogo guardado (local).');
-  setHTML('diag', `Encabezados: ${header0.join(' | ')}\nPrimeras filas:\n- ${samples.join('\n- ')}`);
+  setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`);
   refreshUI();
 }
+function procesarCatalogoDesdeTexto(text){
+  _lastCatRaw = text.replace(/\r/g,'');
+  const lines = _lastCatRaw.split('\n').filter(l => l.trim());
+  if (!lines.length){ alert('Catálogo vacío.'); setHTML('catalogDiag','Catálogo vacío (0 líneas).'); return; }
+
+  const delim   = detectDelimiter(lines[0]);
+  _lastCatDelim = delim;
+  const header0 = splitCSVLineFlexible(lines[0], delim).map(h => norm(h.replace(/^"+|"+$/g,'')));
+  _lastCatHeaders = header0.slice();
+  const H       = header0.map(canon);
+
+  setHTML('catalogDiag', `Delimitador: "${delim}" · Encabezados (${header0.length}):<br>- ${header0.join('<br>- ')}`);
+  fillMappingDropdowns(header0);
+
+  const idx = { BC:-1, MOD:-1, COLOR:-1, TALLA:-1, TEMP:-1 };
+  const wants = {
+    BC   : ['CODIGO BARRA','CODIGO DE BARRAS','COD BARRAS','EAN','UPC','CODIGO','CODIGODEBARRAS','CBARRAS','BARCODE'],
+    MOD  : ['MOD','MODELO','SKU','REFERENCIA','REF'],
+    COLOR: ['COLOR','COL','CLR'],
+    TALLA: ['TALLA','SIZE','NUMERO','NUM','NR'],
+    TEMP : ['TEMPORADA','TEMP','SEASON']
+  };
+  for (const [k, arr] of Object.entries(wants)){
+    for (const a of arr){
+      const pos = H.indexOf(a);
+      if (pos !== -1){ idx[k]=pos; break; }
+    }
+  }
+  if (idx.BC === -1){
+    for (let i=0;i<H.length;i++){
+      if (H[i].includes('COD') && H[i].includes('BARR')){ idx.BC = i; break; }
+    }
+  }
+  if (idx.BC === -1){
+    setText('catalogoStatus','No se detectó CÓDIGO DE BARRAS. Usa el mapeo manual y pulsa “Aplicar mapeo manual”.');
+    return;
+  }
+  parseCatalogWithIndex(lines, delim, idx);
+}
+function applyManualMap(){
+  if(!_lastCatRaw){ alert('Primero carga el archivo de catálogo.'); return; }
+  const lines = _lastCatRaw.split('\n').filter(l=>l.trim());
+  const delim = _lastCatDelim || detectDelimiter(lines[0]);
+  const idx = {
+    BC:   parseInt((el('mapBC')?.value||'-1'),10),
+    MOD:  parseInt((el('mapMOD')?.value||'-1'),10),
+    COLOR:parseInt((el('mapCOLOR')?.value||'-1'),10),
+    TALLA:parseInt((el('mapTALLA')?.value||'-1'),10),
+    TEMP: parseInt((el('mapTEMP')?.value||'-1'),10),
+  };
+  if(isNaN(idx.BC) || idx.BC<0){ alert('Selecciona al menos la columna de Código de barras.'); return; }
+  parseCatalogWithIndex(lines, delim, idx);
+}
+el('btnAplicarMapa')?.addEventListener('click', applyManualMap);
+
 el('fileCatalogo')?.addEventListener('change', async e=>{
   const f=e.target.files?.[0]; if(!f) return;
-  const t=await f.text();
+  const t=await readFileSmart(f);
   procesarCatalogoDesdeTexto(t);
 });
 el('btnUsarCatalogoGuardado')?.addEventListener('click', ()=>{
@@ -333,38 +392,50 @@ el('btnBorrarCatalogo')?.addEventListener('click', ()=>{
 
 /* ===== Existencia (CSV o pegado) ===== */
 function parseExistenciaCSV(text){
-  const raw=text.replace(/\r/g,'').replace(/;/g,',');
+  const raw=text.replace(/\r/g,'');
   const lines=raw.split('\n').filter(l=>l.trim());
-  if(!lines.length){alert('Archivo de existencia vacío.'); return;}
+  if(!lines.length){alert('Archivo de existencia vacío.'); setHTML('existDiag','EXI vacío (0 líneas).'); return;}
+
   const firstDelim=detectDelimiter(lines[0]);
   const firstCols=splitCSVLineFlexible(lines[0],firstDelim).map(x=>norm(x).toUpperCase());
   const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>firstCols.includes(h));
   let delim=',', startIndex=0, idxMap=null;
-  if(hasHeader){ delim=firstDelim; startIndex=1; idxMap=(function(cols){ const up=cols.map(c=>norm(c).toUpperCase()); const get=(arr)=>{for(const a of arr){const i=up.indexOf(a); if(i!==-1) return i;} return -1;}; return { KEY:get(['CODIGO-COLOR-TALLA','CLAVE','KEY']), MOD:get(['MOD','MODELO','SKU']), COLOR:get(['COLOR','COL']), TALLA:get(['TALLA','SIZE','NUMERO']), CANT:get(['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']) }; })(firstCols); }
-  else { const sample=lines[1]||lines[0]; delim=detectDelimiter(sample); }
+  if(hasHeader){
+    delim=firstDelim; startIndex=1;
+    const up=firstCols;
+    const get=(arr)=>{for(const a of arr){const i=up.indexOf(a); if(i!==-1) return i;} return -1;};
+    idxMap={ KEY:get(['CODIGO-COLOR-TALLA','CLAVE','KEY']), MOD:get(['MOD','MODELO','SKU']), COLOR:get(['COLOR','COL']), TALLA:get(['TALLA','SIZE','NUMERO']), CANT:get(['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']) };
+  } else { const sample=lines[1]||lines[0]; delim=detectDelimiter(sample); }
+
+  setHTML('existDiag', `Líneas: ${lines.length} · Header: ${hasHeader?'sí':'no'} · Delim: "${delim}" · Head=[${firstCols.join(' | ')}]`);
 
   const acc=new Map(); let ok=0,skip=0;
   for(let i=startIndex;i<lines.length;i++){
     const line=lines[i]; let key=''; let qty=1;
+
     if(hasHeader){
-      const p=splitCSVLineFlexible(line,delim).map(norm);
-      if(idxMap.MOD>=0&&idxMap.COLOR>=0&&idxMap.TALLA>=0){ key=`${canon(p[idxMap.MOD])}|${canon(p[idxMap.COLOR])}|${canon(p[idxMap.TALLA])}`; }
-      else if(idxMap.KEY>=0&&p[idxMap.KEY]){
-        const rawKey=p[idxMap.KEY];
+      const p=splitCSVLineFlexible(line,delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
+      const safe = j => (j>=0 && j<p.length) ? p[j] : '';
+
+      if(idxMap.MOD>=0&&idxMap.COLOR>=0&&idxMap.TALLA>=0){
+        key=`${canon(safe(idxMap.MOD))}|${canon(safe(idxMap.COLOR))}|${canon(safe(idxMap.TALLA))}`;
+      } else if(idxMap.KEY>=0&&safe(idxMap.KEY)){
+        const rawKey=safe(idxMap.KEY);
         if(rawKey.includes('|')){ const [m,c,t]=rawKey.split('|').map(canon); key=`${m}|${c}|${t}`; }
-        else if(rawKey.includes(',')){ const [m,tail]=rawKey.split(','); const [c,t]=(tail||'').split('-'); key=`${canon(m)}|${canon(c)}|${canon(t)}`; }
+        else if(rawKey.includes(',')){ const [m, tail]=rawKey.split(','); const [c,t]=(tail||'').split('-'); key=`${canon(m)}|${canon(c)}|${canon(t)}`; }
         else if(rawKey.includes('-')){ const [m,c,t]=rawKey.split('-').map(canon); key=`${m}|${c}|${t}`; }
       }
-      if(idxMap.CANT>=0){ const num=parseInt((p[idxMap.CANT]||'').replace(/\./g,'').replace(',',''),10); qty=Number.isFinite(num)&&num>0?num:1; }
+      if(idxMap.CANT>=0){ const num=parseInt((safe(idxMap.CANT)||'').replace(/\./g,'').replace(',',''),10); qty=Number.isFinite(num)&&num>0?num:1; }
     } else {
       let l=line.replace(/\u00A0/g,' ').trim();
       l=l.replace(/\s{2,}/g,' '); l=l.replace(/\s*-\s*/g,'-');
       let m=l.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
       if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4],10)||1; }
       if(!key){ m=l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
-      if(!key){ m=l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+)))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
+      if(!key){ m=l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
       if(!key && /^\d{6,}$/.test(l)){ const it=state.catalog.get(l); if(it){ key=`${canon(it.MOD)}|${canon(it.COLOR)}|${canon(it.TALLA)}`; qty=1; } }
     }
+
     if(!key){ skip++; continue; }
     acc.set(key,(acc.get(key)||0)+qty);
     if(!state.keyMeta.has(key)){ const [M,C,T]=key.split('|'); state.keyMeta.set(key,{MOD:M,COLOR:C,TALLA:T,TEMPORADA:''}); }
@@ -375,8 +446,10 @@ function parseExistenciaCSV(text){
   setText('existenciaStatus',`${acc.size} claves.`);
   setHTML('existenciaPreview',renderTable(acc));
   refreshUI();
+
+  if (ok===0){ alert('Existencia leída pero 0 registros válidos. Revisa formato.'); }
 }
-el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const t=await e.target.files?.[0]?.text(); if(!t) return; parseExistenciaCSV(t); });
+el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await readFileSmart(f); parseExistenciaCSV(t); });
 el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
 el('btnLimpiarExistencia')?.addEventListener('click',()=>{ const tx=el('existenciaInput'); if(tx) tx.value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
@@ -421,7 +494,6 @@ el('scanInput')?.addEventListener('keydown',e=>{
 /* ===== Firebase (CDN v12) ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
   authDomain: "cklass-conteo.firebaseapp.com",
@@ -434,7 +506,7 @@ const firebaseConfig = {
 const appFB = initializeApp(firebaseConfig);
 const db = getFirestore(appFB);
 
-/* ===== Publicación existencia en lotes ===== */
+/* ===== Publicación existencia y catálogo ===== */
 function setStatus(txt){ setText('folioStatus', txt); showDiag(txt); }
 async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
   await setDoc(doc(db, "ciclicos", folio), { folio, ...meta, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
@@ -469,14 +541,9 @@ async function registrarEscaneoEnNube(folio, { clave, operador = '', dispositivo
   if (!folio) return;
   await addDoc(collection(db, `ciclicos/${folio}/escaneos`), { clave, operador, dispositivo, ts: serverTimestamp() });
 }
-
-/* ===== Catálogo en la nube (subcolección catalog) ===== */
 async function publicarCatalogo(folio) {
-  if (!state.catalog || !state.catalog.size) {
-    alert('No hay catálogo cargado en este dispositivo.');
-    return;
-  }
-  const arr = [...state.catalog.entries()]; // [ [barcode, {MOD,COLOR,TALLA,TEMPORADA}], ... ]
+  if (!state.catalog || !state.catalog.size) { alert('No hay catálogo cargado en este dispositivo.'); return; }
+  const arr = [...state.catalog.entries()];
   const CHUNK = 400;
   let subidos = 0;
   for (let i = 0; i < arr.length; i += CHUNK) {
@@ -579,14 +646,14 @@ btnActExi?.addEventListener('click', async ()=>{
 });
 btnSubirCatalogo?.addEventListener('click', async ()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; }
-  try{ await publicarCatalogo(folio); }catch(e){ alert('❌ Error subiendo catálogo: '+(e?.message||e)); }
+  try{ await publicarCatalogo(folio); }catch(e){ alert('❌ Error subiendo catálogo a nube: '+(e?.message||e)); }
 });
 btnCargarCatalogoNube?.addEventListener('click', async ()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio primero.'); return; }
   try{ const ok=await cargarCatalogoDeNube(folio); if(!ok) alert('ℹ️ Este folio no tiene catálogo adjunto en nube.'); }catch(e){ alert('❌ Error cargando catálogo (nube): '+(e?.message||e)); }
 });
 
-/* ===== Reporte simple ===== */
+/* ===== Reporte ===== */
 function computeReport(){ const esc=group(state.scans), exi=state.existencia, sob=new Map(), fal=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); keys.forEach(k=>{ const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sob.set(k,e-x); if(x-e>0) fal.set(k,x-e); }); return {escT,sob,falt:fal}; }
 el('btnGenerarReporte')?.addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); setHTML('tablaEscaneados',renderTable(escT)); setHTML('tablaSobrantes',renderTable(sob)); setHTML('tablaFaltantes',renderTable(falt)); });
 el('btnExportarCSV')?.addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(name,map)=>{ for(const [k,v] of map) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
