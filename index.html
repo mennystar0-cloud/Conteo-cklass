@@ -203,7 +203,7 @@
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Catálogo en Firebase Storage (1 archivo). Existencia/escaneos en Firestore. Lectura pública, escritura controlada.
+    Catálogo en Firebase Storage (1 archivo, con progreso). Existencia/escaneos en Firestore. Lectura pública, escritura controlada.
   </footer>
 </div>
 
@@ -219,6 +219,7 @@ function setHTML(id, html){ const e=el(id); if(e) e.innerHTML=html; }
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function withTimeout(promise, ms, label='op'){ let t; const to=new Promise((_,rej)=>t=setTimeout(()=>rej(new Error(`Timeout (${label}) ${ms}ms`)),ms)); try{ return await Promise.race([promise,to]); } finally{ clearTimeout(t); } }
 function showDiag(msg){ const d=el('diag'); if(d) d.textContent=String(msg); }
+function fmtBytes(b){ if(!b&&b!==0) return '-'; const u=['B','KB','MB','GB']; let i=0; let x=b; while(x>=1024 && i<u.length-1){ x/=1024; i++; } return `${x.toFixed(1)} ${u[i]}`; }
 
 /* ===== Estado ===== */
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
@@ -445,7 +446,7 @@ el('scanInput')?.addEventListener('keydown',e=>{
 /* ===== Firebase (CDN v12) ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
@@ -500,10 +501,9 @@ async function cargarExistenciaDeNube(folio) {
   refreshUI();
 }
 
-/* ===== Catálogo en Storage (1 archivo) ===== */
+/* ===== Catálogo en Storage (1 archivo) + PROGRESO ===== */
 function catalogoComoCSV() {
-  const rows = [];
-  rows.push('bc,MOD,COLOR,TALLA,TEMPORADA');
+  const rows = ['bc,MOD,COLOR,TALLA,TEMPORADA'];
   for (const [bc, meta] of state.catalog.entries()) {
     const MOD = (meta.MOD||'').replaceAll('"','""');
     const COLOR = (meta.COLOR||'').replaceAll('"','""');
@@ -515,19 +515,41 @@ function catalogoComoCSV() {
 }
 async function subirCatalogoAStorage(folio) {
   if (!state.catalog.size) { alert('Primero carga el catálogo en esta computadora.'); return; }
+
   setStatus('Empaquetando catálogo (CSV)…');
   const csv = catalogoComoCSV();
-  const fileRef = ref(storage, `catalogos/${folio}.csv`);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
 
-  setStatus('Subiendo a Storage…');
-  await uploadBytes(fileRef, blob);
+  const btn = document.getElementById('btnSubirCatalogoStorage');
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
 
-  const url = await getDownloadURL(fileRef);
-  await setDoc(doc(db, 'ciclicos', folio), { catalogUrl: url, actualizado: serverTimestamp() }, { merge: true });
+  try {
+    const fileRef = ref(storage, `catalogos/${folio}.csv`);
+    const task = uploadBytesResumable(fileRef, blob, { contentType: 'text/csv;charset=utf-8' });
 
-  setStatus('✅ Catálogo subido a Storage y URL guardada en folio.');
-  alert('✅ Catálogo listo en Storage.\nSe guardó la URL en el folio.');
+    task.on('state_changed',
+      snap => {
+        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        setStatus(`Subiendo a Storage… ${pct}% (${fmtBytes(snap.bytesTransferred)}/${fmtBytes(snap.totalBytes)})`);
+      },
+      err => {
+        alert('❌ Error subiendo a Storage: ' + (err?.message || err));
+        setStatus('❌ Error subiendo a Storage.');
+      },
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        await setDoc(doc(db, 'ciclicos', folio), { catalogUrl: url, actualizado: serverTimestamp() }, { merge: true });
+        setStatus('✅ Catálogo subido y URL guardada en el folio.');
+        alert('✅ Catálogo listo en Storage.\nSe guardó la URL en el folio.');
+      }
+    );
+  } catch(e) {
+    alert('❌ Error subiendo: ' + (e?.message || e));
+    setStatus('❌ Error subiendo a Storage.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = old || 'Subir catálogo (Storage)'; }
+  }
 }
 async function cargarCatalogoDesdeStorage(folio) {
   setStatus('Leyendo URL de catálogo del folio…');
@@ -542,7 +564,7 @@ async function cargarCatalogoDesdeStorage(folio) {
   if (!resp.ok) throw new Error('No se pudo descargar el CSV del catálogo.');
   const text = await resp.text();
 
-  procesarCatalogoDesdeTexto(text); // reutiliza el parser
+  procesarCatalogoDesdeTexto(text);
   setStatus(`Catálogo cargado desde Storage: ${state.catalog.size} códigos.`);
   alert(`Catálogo cargado (Storage): ${state.catalog.size} códigos.`);
 }
