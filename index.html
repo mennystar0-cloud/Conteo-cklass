@@ -8,23 +8,21 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
   <script>
-    // Bust de caché del SW
+    // SW con bust de caché
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=4").catch(()=>{});
+      addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js?v=5").catch(()=>{});
       });
     }
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
   <style>
     video{object-fit:cover}
     @media print{.no-print{display:none!important}}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
     .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
     .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
-    .cam-compact{height:45vh;max-height:420px}
     .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
+    .cam-compact{height:45vh;max-height:420px}
     details>summary{cursor:pointer;user-select:none}
   </style>
 </head>
@@ -32,7 +30,7 @@
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
     <h1 class="text-2xl font-bold">Módulo de Conteo – Catálogo en Storage + Existencia en Firestore</h1>
-    <p class="text-sm text-gray-600">1) Importar catálogo · 2) Subir catálogo (Storage) · 3) Cargar/pegar existencia · 4) Publicar cíclico · 5) Cargar en celulares por <code>?folio=</code>.</p>
+    <p class="text-sm text-gray-600">1) Importar catálogo · 2) Subir a Storage · 3) Cargar/pegar existencia · 4) Publicar cíclico · 5) Cargar en celulares con <code>?folio=</code>.</p>
   </header>
 
   <!-- Tabs -->
@@ -51,7 +49,7 @@
       <!-- Catálogo -->
       <div class="card">
         <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Columnas típicas: <code>CÓDIGO DE BARRAS / EAN / UPC</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Encabezados sugeridos: <code>CÓDIGO DE BARRAS / EAN</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code>.</p>
         <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div class="flex gap-2 mt-2">
           <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar guardado</button>
@@ -63,21 +61,19 @@
 
         <details class="mt-3">
           <summary class="text-sm font-medium">Diagnóstico catálogo / Mapeo manual</summary>
-          <div class="text-xs mono mt-2">
-            <div id="catalogDiag">—</div>
-            <div id="catalogFirstRows" class="mt-2"></div>
-            <div class="mt-3 p-2 bg-gray-50 rounded-lg">
-              <div class="text-[11px] mb-1">Si no detecta encabezados, mapea manualmente:</div>
-              <div class="grid grid-cols-2 gap-2">
-                <label class="text-[11px]">Código<select id="mapBC" class="border rounded p-1 text-xs"></select></label>
-                <label class="text-[11px]">MOD<select id="mapMOD" class="border rounded p-1 text-xs"></select></label>
-                <label class="text-[11px]">COLOR<select id="mapCOLOR" class="border rounded p-1 text-xs"></select></label>
-                <label class="text-[11px]">TALLA<select id="mapTALLA" class="border rounded p-1 text-xs"></select></label>
-                <label class="text-[11px]">TEMP<select id="mapTEMP" class="border rounded p-1 text-xs"></select></label>
-              </div>
-              <div class="mt-2">
-                <button id="btnAplicarMapa" class="btn bg-gray-200">Aplicar mapeo manual</button>
-              </div>
+          <div class="text-xs mt-2" id="catalogDiag">—</div>
+          <div class="text-xs mt-2" id="catalogFirstRows"></div>
+          <div class="mt-3 p-2 bg-gray-50 rounded-lg">
+            <div class="text-[11px] mb-1">Si no detecta encabezados, mapea manualmente:</div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="text-[11px]">Código<select id="mapBC" class="border rounded p-1 text-xs"></select></label>
+              <label class="text-[11px]">MOD<select id="mapMOD" class="border rounded p-1 text-xs"></select></label>
+              <label class="text-[11px]">COLOR<select id="mapCOLOR" class="border rounded p-1 text-xs"></select></label>
+              <label class="text-[11px]">TALLA<select id="mapTALLA" class="border rounded p-1 text-xs"></select></label>
+              <label class="text-[11px]">TEMP<select id="mapTEMP" class="border rounded p-1 text-xs"></select></label>
+            </div>
+            <div class="mt-2">
+              <button id="btnAplicarMapa" class="btn bg-gray-200">Aplicar mapeo manual</button>
             </div>
           </div>
         </details>
@@ -86,9 +82,10 @@
       <!-- Existencia -->
       <div class="card">
         <h2 class="font-semibold mb-2">Existencia física (CSV / pegado)</h2>
-        <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code> · ó <code>000-24,NEGRO    220    4</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code> · ó <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.</p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
+
         <div class="bg-gray-50 rounded-xl p-2 mt-3">
           <label class="text-xs text-gray-600">Pegar existencia</label>
           <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Ej: 000-24,NEGRO              220          4"></textarea>
@@ -99,7 +96,7 @@
           <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
           <details class="mt-2">
             <summary class="text-sm font-medium">Diagnóstico existencia</summary>
-            <div class="text-xs mono mt-2" id="existDiag">—</div>
+            <div class="text-xs mt-2" id="existDiag">—</div>
           </details>
         </div>
       </div>
@@ -131,8 +128,6 @@
         <!-- Storage -->
         <button id="btnSubirCatalogoStorage" class="btn bg-fuchsia-600 text-white">Subir catálogo (Storage)</button>
         <button id="btnCargarCatalogoStorage" class="btn bg-fuchsia-200">Cargar catálogo (Storage)</button>
-        <!-- Test Storage -->
-        <button id="btnTestStorage" class="btn bg-gray-100">Probar Storage</button>
       </div>
       <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue catálogo (Storage) + existencia (Firestore).</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
@@ -142,19 +137,15 @@
   <!-- Escanear -->
   <section id="tab-escanear" class="tab-pane hidden">
     <div class="card">
-      <h2 class="font-semibold mb-2">Escaneo con cámara / Registro manual</h2>
-
-      <div class="flex flex-wrap items-center gap-2 mb-2">
-        <select id="cameraSelect" class="border rounded p-1 text-xs"></select>
+      <h2 class="font-semibold mb-2">Escaneo / Registro manual</h2>
+      <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mb-3">
+        <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
+      </div>
+      <div class="flex gap-2 mb-2">
         <button id="btnPermisos" class="btn bg-indigo-600 text-white">Permisos</button>
-        <button id="btnCamStart" class="btn bg-green-600 text-white">Iniciar</button>
+        <button id="btnCamStart" class="btn bg-green-600 text-white">Iniciar cámara</button>
         <button id="btnCamStop" class="btn bg-gray-100">Detener</button>
         <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
-        <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
-      </div>
-
-      <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mt-2">
-        <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
       </div>
 
       <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 my-3" placeholder="Escanea o escribe: 10902400 ó 000-01|ORO|240" />
@@ -175,8 +166,6 @@
           <div class="text-xs text-gray-600 mt-2" id="lastStatus">—</div>
         </div>
       </div>
-
-      <div class="mt-3 text-xs text-gray-500 mono" id="diag"></div>
     </div>
   </section>
 
@@ -205,184 +194,108 @@
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Catálogo en Firebase Storage (CSV con progreso). Existencia en Firestore. Escaneo en vivo.
+    Catálogo en Firebase Storage (CSV con progreso). Existencia en Firestore. SW con bust de caché (?v=5).
   </footer>
 </div>
 
+<!-- Quagga2 (fallback de cámara) -->
+<script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
+
 <script>
-/* ALERTA global si hay error JS que detenga todo */
-window.addEventListener('error', e => {
-  alert('⚠️ Error JS: ' + (e?.message || e));
-});
+  // alerta global de JS
+  addEventListener('error', e => alert('⚠️ Error JS: ' + (e?.message || e)));
 </script>
 
 <script type="module">
-/* ===== Tabs ===== */
+/* ---------- Util ---------- */
 const $ = s => document.querySelector(s);
 const el = id => document.getElementById(id);
-(()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:el('tab-importar'),escanear:el('tab-escanear'),reporte:el('tab-reporte'),historial:el('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,elx])=>{elx?.classList.toggle('hidden',k!==t);elx?.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
-
-/* ===== Util ===== */
-function setText(id, txt){ const e=el(id); if(e) e.textContent=txt; }
-function setHTML(id, html){ const e=el(id); if(e) e.innerHTML=html; }
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-async function withTimeout(promise, ms, label='op'){ let t; const to=new Promise((_,rej)=>t=setTimeout(()=>rej(new Error(`Timeout (${label}) ${ms}ms`)),ms)); try{ return await Promise.race([promise,to]); } finally{ clearTimeout(t); } }
-function fmtBytes(b){ if(!b&&b!==0) return '-'; const u=['B','KB','MB','GB']; let i=0; let x=b; while(x>=1024 && i<u.length-1){ x/=1024; i++; } return `${x.toFixed(1)} ${u[i]}`; }
+(()=>{ // tabs
+  const tabs=document.querySelectorAll('.tab-btn');
+  const panes={importar:el('tab-importar'),escanear:el('tab-escanear'),reporte:el('tab-reporte'),historial:el('tab-historial')};
+  function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t);});location.hash='#'+t;}
+  tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));
+  addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));
+  activate((location.hash||'#importar').slice(1));
+})();
+function setText(id, t){ const e=el(id); if(e) e.textContent=t; }
+function setHTML(id, h){ const e=el(id); if(e) e.innerHTML=h; }
 function renderTable(map){return `<table class="min-w-full text-sm table"><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('')}</tbody></table>`;}
-function group(list){const m=new Map();list.forEach(k=>{ if(!String(k).startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1);});return m;}
-function showDiag(msg){ const d=el('diag'); if(d) d.textContent=String(msg); }
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function group(list){const m=new Map();list.forEach(k=>m.set(k,(m.get(k)||0)+1));return m;}
+function detectDelimiter(s){ if(s.includes('\t')) return '\t'; const cand=[',',';','|']; let best=',',max=-1; for(const d of cand){ const c=(s.match(new RegExp('\\'+d,'g'))||[]).length; if(c>max){max=c;best=d;} } return best;}
+function splitCSVLineFlexible(line,delim){ const out=[]; let cur='',q=false; for(let i=0;i<line.length;i++){ const ch=line[i]; if(ch=='"'){ if(q&&line[i+1]=='"'){cur+='"';i++;} else q=!q; } else if(ch===delim && !q){ out.push(cur); cur=''; } else { cur+=ch; } } out.push(cur); return out; }
+const norm=s=>(s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
+const canon=s=>norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
 
-/* ===== Estado ===== */
+/* ---------- Estado ---------- */
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
-const deviceId=(localStorage.getItem('conteo_device_id')||(crypto.randomUUID?.()||String(Math.random()).slice(2))); localStorage.setItem('conteo_device_id',deviceId);
-function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos cargados.`); setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`); setText('existenciaStatus', `${state.existencia.size||0} claves.`); setHTML('existenciaPreview', renderTable(state.existencia)); setHTML('scanLog', '<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>'); setHTML('scanGrouped', renderTable(group(state.scans))); }
+function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos cargados.`); setHTML('existenciaPreview', renderTable(state.existencia)); setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`); setText('existenciaStatus', `${state.existencia.size||0} claves.`); setHTML('scanLog','<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>'); setHTML('scanGrouped', renderTable(group(state.scans))); }
 
-/* ===== CSV utils ===== */
-async function readFileSmart(file){
-  try { const t = await file.text(); if (t && t.split(/\r?\n/).filter(l=>l.trim()).length > 1) return t; } catch {}
-  try { const ab = await file.arrayBuffer(); const dec = new TextDecoder('windows-1252'); const t = dec.decode(ab); return t; } catch {}
-  return await file.text();
-}
-const norm = s => (s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
-function canon(s){
-  return norm(s)
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^A-Za-z0-9]+/g,' ')
-    .replace(/\s+/g,' ')
-    .trim().toUpperCase();
-}
-function detectDelimiter(sample){
-  if(sample.includes('\t')) return '\t';
-  const cand=[',',';','|']; let best=',',max=-1; for(const d of cand){ const c=(sample.match(new RegExp('\\'+d,'g'))||[]).length; if(c>max){max=c;best=d;} } return best;
-}
-function splitCSVLineFlexible(line,delim){
-  const out=[]; let cur='',q=false;
-  for(let i=0;i<line.length;i++){
-    const ch=line[i];
-    if(ch==='"'){ if(q && line[i+1]==='"'){ cur+='"'; i++; } else { q=!q; } }
-    else if(ch===delim && !q){ out.push(cur); cur=''; }
-    else { cur+=ch; }
-  }
-  out.push(cur); return out;
-}
-
-/* ===== Catálogo con mapeo manual ===== */
-let _lastCatRaw = '', _lastCatDelim = ',', _lastCatHeaders = [];
-function fillMappingDropdowns(headers){
-  ['mapBC','mapMOD','mapCOLOR','mapTALLA','mapTEMP'].forEach(id=>{
-    const sel=el(id); if(!sel) return;
-    sel.innerHTML = `<option value="">—</option>` + headers.map((h,i)=>`<option value="${i}">${h}</option>`).join('');
-  });
-}
+/* ---------- Catálogo ---------- */
+let _lastCatRaw='', _lastCatDelim=',', _lastCatHeaders=[];
+function fillMappingDropdowns(headers){ ['mapBC','mapMOD','mapCOLOR','mapTALLA','mapTEMP'].forEach(id=>{ const s=el(id); if(!s) return; s.innerHTML=`<option value="">—</option>`+headers.map((h,i)=>`<option value="${i}">${h}</option>`).join(''); }); }
 function parseCatalogWithIndex(lines, delim, idx){
   state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
   let ok=0; const samples=[];
-  for (let i=1;i<lines.length;i++){
-    if (!lines[i].trim()) continue;
-    const cols = splitCSVLineFlexible(lines[i], delim).map(v => norm(v.replace(/^"+|"+$/g,'')));
-    const safe = j => (j>=0 && j<cols.length) ? cols[j] : '';
-    const bc   = safe(idx.BC); if (!bc) continue;
-    const MOD  = safe(idx.MOD), COLOR= safe(idx.COLOR), TALLA= safe(idx.TALLA), TEMP = safe(idx.TEMP);
-    state.catalog.set(bc, { MOD, COLOR, TALLA, TEMPORADA: TEMP });
-    if (MOD || COLOR || TALLA){
-      const key = `${canon(MOD)}|${canon(COLOR)}|${canon(TALLA)}`;
-      if (!state.indexByKey.has(key)) state.indexByKey.set(key, []);
-      state.indexByKey.get(key).push(bc);
-      if (!state.keyMeta.has(key)) state.keyMeta.set(key, { MOD, COLOR, TALLA, TEMPORADA: TEMP });
-    }
-    ok++; if (samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
+  for(let i=1;i<lines.length;i++){
+    if(!lines[i].trim()) continue;
+    const cols=splitCSVLineFlexible(lines[i],delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
+    const safe=j=>(j>=0&&j<cols.length)?cols[j]:'';
+    const bc=safe(idx.BC); if(!bc) continue;
+    const MOD=safe(idx.MOD), COLOR=safe(idx.COLOR), TALLA=safe(idx.TALLA), TEMP=safe(idx.TEMP);
+    state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+    const key=`${canon(MOD)}|${canon(COLOR)}|${canon(TALLA)}`;
+    if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]);
+    state.indexByKey.get(key).push(bc);
+    if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+    ok++; if(samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
   }
-  localStorage.setItem('catalogo_fixed_v1', JSON.stringify({
-    catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]
-  }));
-  setText('catalogoStatus', `${ok} registros cargados.`);
-  setText('catalogoGuardadoStatus','Catálogo guardado (local).');
-  setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`);
-  refreshUI();
-  try{ alert('✅ Catálogo leído: ' + state.catalog.size + ' registros'); }catch{}
+  localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}));
+  setText('catalogoStatus', `${ok} registros cargados.`); setText('catalogoGuardadoStatus','Catálogo guardado (local).'); setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`); refreshUI();
 }
 function procesarCatalogoDesdeTexto(text){
-  _lastCatRaw = text.replace(/\r/g,'');
-  const lines = _lastCatRaw.split('\n').filter(l => l.trim());
-  if (!lines.length){ alert('Catálogo vacío.'); setHTML('catalogDiag','Catálogo vacío (0 líneas).'); return; }
-  const delim   = detectDelimiter(lines[0]); _lastCatDelim = delim;
-  const header0 = splitCSVLineFlexible(lines[0], delim).map(h => norm(h.replace(/^"+|"+$/g,''))); _lastCatHeaders = header0.slice();
-  const H       = header0.map(canon);
-  setHTML('catalogDiag', `Delimitador: "${delim}" · Encabezados (${header0.length}):<br>- ${header0.join('<br>- ')}`);
-  fillMappingDropdowns(header0);
-  const idx = { BC:-1, MOD:-1, COLOR:-1, TALLA:-1, TEMP:-1 };
-  const wants = {
-    BC   : ['CODIGO BARRA','CODIGO DE BARRAS','COD BARRAS','EAN','UPC','CODIGO','CODIGODEBARRAS','CBARRAS','BARCODE'],
-    MOD  : ['MOD','MODELO','SKU','REFERENCIA','REF'],
-    COLOR: ['COLOR','COL','CLR'],
-    TALLA: ['TALLA','SIZE','NUMERO','NUM','NR'],
-    TEMP : ['TEMPORADA','TEMP','SEASON']
-  };
-  for (const [k, arr] of Object.entries(wants)){
-    for (const a of arr){
-      const pos = H.indexOf(a);
-      if (pos !== -1){ idx[k]=pos; break; }
-    }
-  }
-  if (idx.BC === -1){ for (let i=0;i<H.length;i++){ if (H[i].includes('COD') && H[i].includes('BARR')){ idx.BC = i; break; } } }
-  if (idx.BC === -1){ setText('catalogoStatus','No se detectó CÓDIGO DE BARRAS. Usa el mapeo manual y pulsa “Aplicar mapeo manual”.'); return; }
-  parseCatalogWithIndex(lines, delim, idx);
+  _lastCatRaw=text.replace(/\r/g,''); const lines=_lastCatRaw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Catálogo vacío.'); return; }
+  const delim=detectDelimiter(lines[0]); _lastCatDelim=delim;
+  const header0=splitCSVLineFlexible(lines[0],delim).map(h=>norm(h.replace(/^"+|"+$/g,''))); _lastCatHeaders=header0.slice();
+  const H=header0.map(canon); setHTML('catalogDiag', `Delim: "${delim}" · Encabezados: ${header0.join(' | ')}`); fillMappingDropdowns(header0);
+  const wants={BC:['CODIGO BARRA','CODIGO DE BARRAS','EAN','UPC','CODIGO','BARCODE'], MOD:['MOD','MODELO','SKU','REFERENCIA','REF'], COLOR:['COLOR','COL'], TALLA:['TALLA','SIZE','NUMERO'], TEMP:['TEMPORADA','TEMP','SEASON']};
+  const idx={BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1};
+  for(const [k,arr] of Object.entries(wants)){ for(const a of arr){ const pos=H.indexOf(a); if(pos!==-1){ idx[k]=pos; break; } } }
+  if(idx.BC===-1){ setText('catalogoStatus','No se detectó CÓDIGO DE BARRAS. Usa el mapeo manual y “Aplicar mapeo manual”.'); return; }
+  parseCatalogWithIndex(lines,delim,idx);
 }
 function applyManualMap(){
-  if(!_lastCatRaw){ alert('Primero carga el archivo de catálogo.'); return; }
-  const lines = _lastCatRaw.split('\n').filter(l=>l.trim());
-  const delim = _lastCatDelim || detectDelimiter(lines[0]);
-  const idx = {
-    BC:   parseInt((el('mapBC')?.value||'-1'),10),
-    MOD:  parseInt((el('mapMOD')?.value||'-1'),10),
-    COLOR:parseInt((el('mapCOLOR')?.value||'-1'),10),
-    TALLA:parseInt((el('mapTALLA')?.value||'-1'),10),
-    TEMP: parseInt((el('mapTEMP')?.value||'-1'),10),
-  };
-  if(isNaN(idx.BC) || idx.BC<0){ alert('Selecciona al menos la columna de Código de barras.'); return; }
-  parseCatalogWithIndex(lines, delim, idx);
+  if(!_lastCatRaw) return alert('Carga primero el archivo de catálogo.');
+  const lines=_lastCatRaw.split('\n').filter(l=>l.trim()); const delim=_lastCatDelim||detectDelimiter(lines[0]);
+  const idx={ BC:parseInt((el('mapBC')?.value||'-1'),10), MOD:parseInt((el('mapMOD')?.value||'-1'),10), COLOR:parseInt((el('mapCOLOR')?.value||'-1'),10), TALLA:parseInt((el('mapTALLA')?.value||'-1'),10), TEMP:parseInt((el('mapTEMP')?.value||'-1'),10)};
+  if(isNaN(idx.BC)||idx.BC<0) return alert('Selecciona la columna de Código.');
+  parseCatalogWithIndex(lines,delim,idx);
 }
 el('btnAplicarMapa')?.addEventListener('click', applyManualMap);
+el('fileCatalogo')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); procesarCatalogoDesdeTexto(t); });
+el('btnUsarCatalogoGuardado')?.addEventListener('click',()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo guardado.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); setText('catalogoGuardadoStatus','Usando catálogo guardado.'); refreshUI(); });
+el('btnFijarCatalogo')?.addEventListener('click',()=>{ if(!state.catalog.size) return alert('Carga un catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); setText('catalogoGuardadoStatus','Catálogo guardado.'); });
+el('btnBorrarCatalogo')?.addEventListener('click',()=>{ localStorage.removeItem('catalogo_fixed_v1'); setText('catalogoGuardadoStatus','Catálogo eliminado.'); });
 
-el('fileCatalogo')?.addEventListener('change', async e=>{
-  const f=e.target.files?.[0]; if(!f) return; const t=await readFileSmart(f); procesarCatalogoDesdeTexto(t);
-});
-el('btnUsarCatalogoGuardado')?.addEventListener('click', ()=>{
-  const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo guardado.');
-  const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); setText('catalogoGuardadoStatus','Usando catálogo guardado.'); refreshUI();
-});
-el('btnFijarCatalogo')?.addEventListener('click', ()=>{
-  if(!state.catalog.size) return alert('Carga un catálogo primero.');
-  localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}));
-  setText('catalogoGuardadoStatus','Catálogo guardado.');
-});
-el('btnBorrarCatalogo')?.addEventListener('click', ()=>{
-  localStorage.removeItem('catalogo_fixed_v1'); setText('catalogoGuardadoStatus','Catálogo eliminado.');
-});
-
-/* ===== Existencia ===== */
+/* ---------- Existencia ---------- */
 function parseExistenciaCSV(text){
-  const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim());
-  if(!lines.length){alert('Archivo de existencia vacío.'); setHTML('existDiag','EXI vacío (0 líneas).'); return;}
+  const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Archivo de existencia vacío.'); return; }
   const firstDelim=detectDelimiter(lines[0]);
   const firstCols=splitCSVLineFlexible(lines[0],firstDelim).map(x=>norm(x).toUpperCase());
   const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>firstCols.includes(h));
   let delim=',', startIndex=0, idxMap=null;
   if(hasHeader){
-    delim=firstDelim; startIndex=1;
-    const up=firstCols;
-    const get=(arr)=>{for(const a of arr){const i=up.indexOf(a); if(i!==-1) return i;} return -1;};
+    delim=firstDelim; startIndex=1; const up=firstCols; const get=a=>{for(const x of a){const i=up.indexOf(x); if(i!==-1) return i;} return -1;};
     idxMap={ KEY:get(['CODIGO-COLOR-TALLA','CLAVE','KEY']), MOD:get(['MOD','MODELO','SKU']), COLOR:get(['COLOR','COL']), TALLA:get(['TALLA','SIZE','NUMERO']), CANT:get(['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']) };
   } else { const sample=lines[1]||lines[0]; delim=detectDelimiter(sample); }
-  setHTML('existDiag', `Líneas: ${lines.length} · Header: ${hasHeader?'sí':'no'} · Delim: "${delim}" · Head=[${firstCols.join(' | ')}]`);
 
-  const acc=new Map(); let ok=0,skip=0;
+  const acc=new Map(); let ok=0, skip=0;
   for(let i=startIndex;i<lines.length;i++){
-    const line=lines[i]; let key=''; let qty=1;
+    const line=lines[i]; let key='', qty=1;
     if(hasHeader){
-      const p=splitCSVLineFlexible(line,delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
-      const safe = j => (j>=0 && j<p.length) ? p[j] : '';
-      if(idxMap.MOD>=0&&idxMap.COLOR>=0&&idxMap.TALLA>=0){ key=`${canon(safe(idxMap.MOD))}|${canon(safe(idxMap.COLOR))}|${canon(safe(idxMap.TALLA))}`; }
+      const p=splitCSVLineFlexible(line,delim).map(v=>norm(v.replace(/^"+|"+$/g,''))); const safe=j=>(j>=0&&j<p.length)?p[j]:'';
+      if(idxMap.MOD>=0&&idxMap.COLOR>=0&&idxMap.TALLA>=0) key=`${canon(safe(idxMap.MOD))}|${canon(safe(idxMap.COLOR))}|${canon(safe(idxMap.TALLA))}`;
       else if(idxMap.KEY>=0&&safe(idxMap.KEY)){
         const rawKey=safe(idxMap.KEY);
         if(rawKey.includes('|')){ const [m,c,t]=rawKey.split('|').map(canon); key=`${m}|${c}|${t}`; }
@@ -396,7 +309,6 @@ function parseExistenciaCSV(text){
       if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4],10)||1; }
       if(!key){ m=l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
       if(!key){ m=l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
-      if(!key && /^\d{6,}$/.test(l)){ const it=state.catalog.get(l); if(it){ key=`${canon(it.MOD)}|${canon(it.COLOR)}|${canon(it.TALLA)}`; qty=1; } }
     }
     if(!key){ skip++; continue; }
     acc.set(key,(acc.get(key)||0)+qty);
@@ -408,48 +320,21 @@ function parseExistenciaCSV(text){
   setText('existenciaStatus',`${acc.size} claves.`);
   setHTML('existenciaPreview',renderTable(acc));
   refreshUI();
-  try{ alert('✅ Existencia procesada: ' + state.existencia.size + ' claves'); }catch{}
 }
-el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await readFileSmart(f); parseExistenciaCSV(t); });
+el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); parseExistenciaCSV(t); });
 el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
 el('btnLimpiarExistencia')?.addEventListener('click',()=>{ const tx=el('existenciaInput'); if(tx) tx.value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
-/* ===== Cámara y manual ===== */
-const video=el('videoCam'); const cameraSelect=el('cameraSelect');
-let stream=null, scanning=false, lastCode='', lastTs=0;
-async function listCameras(){ const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]); const cams=(devices||[]).filter(d=>d.kind==='videoinput'); if(cameraSelect) cameraSelect.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}">${c.label||('Cámara '+(i+1))}</option>`).join(''); }
-async function startCamera(){ try{ const deviceId=cameraSelect?.value||undefined; stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', deviceId: deviceId?{exact:deviceId}:undefined}}); if(video){ video.srcObject=stream; await video.play(); } scanning=true; tryScanBD(); }catch(e){ alert('No se pudo iniciar cámara: '+(e.message||e)); } }
-function stopCamera(){ scanning=false; if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } if(window.Quagga){ try{ Quagga.stop(); }catch{} } }
-async function tryScanBD(){ if(!video) return; if(!('BarcodeDetector' in window)){ return startQuagga(); } let detector; try{ detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf']}); } catch{ return startQuagga(); } const tick=async()=>{ if(!scanning) return; try{ const res=await detector.detect(video); if(res&&res.length){ const code=String(res[0].rawValue||'').trim(); if(code) handleCode(code); } }catch{} requestAnimationFrame(tick); }; tick(); }
-function startQuagga(){ if(!window.Quagga) return; Quagga.init({inputStream:{name:'Live',type:'LiveStream',target:video,constraints:{facingMode:'environment'}},decoder:{readers:['ean_reader','code_128_reader','upc_reader','code_39_reader','ean_8_reader']}}, err=>{ if(err){ alert('Quagga error: '+err); return; } Quagga.start(); scanning=true; Quagga.onDetected(d=>{ const code=(d&&d.codeResult&&d.codeResult.code)||''; if(code) handleCode(code); }); }); }
-el('btnPermisos')?.addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); await listCameras(); alert('Permisos listos.'); } catch(e){ alert('No se pudo otorgar permisos: '+(e?.message||e)); } });
-el('btnCamStart')?.addEventListener('click', async()=>{ await listCameras(); await startCamera(); });
-el('btnCamStop')?.addEventListener('click', ()=>{ stopCamera(); });
+/* ---------- Cámara muy simple ---------- */
+const video=el('videoCam'); let stream=null;
+el('btnPermisos')?.addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); alert('Permisos listos.'); }catch(e){ alert('No se pudo otorgar permisos: '+(e?.message||e)); }});
+el('btnCamStart')?.addEventListener('click', async()=>{ try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}); video.srcObject=stream; await video.play(); }catch(e){ alert('No se pudo iniciar cámara: '+(e?.message||e)); }});
+el('btnCamStop')?.addEventListener('click', ()=>{ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }});
 
-function handleKeyFromCode(code){
-  let key=null, ok=true;
-  if(/^\d{6,}$/.test(code)){ const it=state.catalog.get(code); if(it) key=`${canon(it.MOD)}|${canon(it.COLOR)}|${canon(it.TALLA)}`; else { ok=false; key='[NO ENCONTRADO] '+code; } }
-  else { key=code; }
-  return {key, ok};
-}
-function handleCode(code){
-  const now=Date.now(); if(code===lastCode && now-lastTs<900) return; lastCode=code; lastTs=now;
-  const {key, ok}=handleKeyFromCode(code);
-  if(!ok){ alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
-  if(el('chkAuto')?.checked){ state.scans.push(key); refreshUI(); } else { const si=el('scanInput'); if(si) si.value=key; }
-  setText('lastStatus','Leído: '+code);
-}
-el('scanInput')?.addEventListener('keydown',e=>{
-  if(e.key!=='Enter') return; const v=e.target.value.trim(); e.target.value=''; if(!v) return;
-  const {key, ok}=handleKeyFromCode(v);
-  if(!ok){ alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
-  state.scans.push(key); refreshUI();
-});
-
-/* ===== Firebase ===== */
+/* ---------- Firebase (CDN v12) ---------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL, setMaxUploadRetryTime, setMaxOperationRetryTime } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
@@ -460,204 +345,115 @@ const firebaseConfig = {
   appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
   measurementId: "G-45LC81EE44"
 };
-const appFB = initializeApp(firebaseConfig);
-const db = getFirestore(appFB);
-const storage = getStorage(appFB);
-try { setMaxUploadRetryTime(storage, 300000); setMaxOperationRetryTime(storage, 300000); } catch {}
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+function setStatus(t){ setText('folioStatus', t); }
 
-/* ===== Folio / meta ===== */
+/* ---------- Folio ---------- */
 const selAlmacen=el('selAlmacen'); const folioInput=el('folioInput');
-const btnGenerar=el('btnGenerarFolio'); const btnPublicar=el('btnPublicarFolio');
-const btnCargarFol=el('btnCargarFolio'); const btnActExi=el('btnActualizarExistencia'); const btnVerificar=el('btnVerificarFolio');
-const btnSubirCatS=el('btnSubirCatalogoStorage'); const btnCargarCatS=el('btnCargarCatalogoStorage'); const btnTestStorage=el('btnTestStorage');
-function setStatus(txt){ setText('folioStatus', txt); showDiag(txt); }
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
-btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); if(folioInput) folioInput.value=folio; setStatus(`Folio generado: ${folio}`); });
+function generarFolio(){ const d=new Date(); const mes=MES_ABR[d.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const k=`seq_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}_${alm}`; const n=(+localStorage.getItem(k)||0)+1; localStorage.setItem(k,String(n)); return `${mes}${alm}${String(n).padStart(5,'0')}`; }
+el('btnGenerarFolio')?.addEventListener('click',()=>{ const f=generarFolio(); if(folioInput) folioInput.value=f; setStatus(`Folio: ${f}`); });
 
-/* ===== Firestore: publicar y cargar existencia ===== */
-async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
-  await setDoc(doc(db, "ciclicos", folio), { folio, ...meta, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
-  if (!existenciaMap || !existenciaMap.size) return;
-  const claves = [...existenciaMap.entries()];
-  const CHUNK = 450;
-  let subidos = 0;
-  for (let i = 0; i < claves.length; i += CHUNK) {
-    const slice = claves.slice(i, i + CHUNK);
-    setStatus(`Subiendo existencia… ${subidos}/${claves.length} (lote ${Math.floor(i/CHUNK)+1})`);
-    const batch = writeBatch(db);
-    const exiCol = collection(db, `ciclicos/${folio}/existencia`);
-    for (const [clave, qty] of slice) batch.set(doc(exiCol, clave), { clave, qty });
-    await withTimeout(batch.commit(), 20000, 'commit-existencia');
-    subidos += slice.length;
-    await sleep(0);
+/* ---------- Firestore: publicar/cargar existencia ---------- */
+async function publicarCiclico(folio, existenciaMap){
+  await setDoc(doc(db,'ciclicos',folio), { folio, almacen: selAlmacen?.value||'GLOBAL', actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge:true });
+  if(!existenciaMap || !existenciaMap.size) return;
+  const arr=[...existenciaMap.entries()];
+  const CHUNK=450; let done=0;
+  for(let i=0;i<arr.length;i+=CHUNK){
+    const slice=arr.slice(i,i+CHUNK);
+    setStatus(`Subiendo existencia… ${done}/${arr.length} (lote ${Math.floor(i/CHUNK)+1})`);
+    const batch=writeBatch(db); const col=collection(db,`ciclicos/${folio}/existencia`);
+    for(const [clave,qty] of slice) batch.set(doc(col,clave),{clave,qty});
+    await batch.commit();
+    done+=slice.length; await sleep(0);
   }
-  setStatus(`Existencia subida: ${subidos}/${claves.length}`);
+  setStatus(`Existencia subida: ${done}/${arr.length}`);
 }
-async function cargarExistenciaDeNube(folio) {
-  const snap = await getDocs(collection(db, `ciclicos/${folio}/existencia`));
-  const acc = new Map();
-  snap.forEach(d => { const { clave, qty } = d.data(); if (clave) acc.set(clave, qty || 0); });
-  state.existencia = acc;
-  setHTML('existenciaPreview', renderTable(acc));
-  setText('existenciaCSVStatus', `${acc.size} claves (nube).`);
-  setText('existenciaStatus', `${acc.size} claves (nube).`);
-  refreshUI();
+async function cargarExistenciaNube(folio){
+  const snap=await getDocs(collection(db,`ciclicos/${folio}/existencia`));
+  const acc=new Map(); snap.forEach(d=>{ const {clave,qty}=d.data(); if(clave) acc.set(clave,qty||0); });
+  state.existencia=acc; setHTML('existenciaPreview',renderTable(acc)); setText('existenciaCSVStatus',`${acc.size} claves (nube)`); setText('existenciaStatus',`${acc.size} claves (nube)`); refreshUI();
 }
 
-/* ===== Storage: catálogo CSV en /catalogos/FOLIO.csv ===== */
-function catalogoComoCSV() {
-  const rows = ['bc,MOD,COLOR,TALLA,TEMPORADA'];
-  for (const [bc, meta] of state.catalog.entries()) {
-    const MOD = (meta.MOD||'').replaceAll('"','""');
-    const COLOR = (meta.COLOR||'').replaceAll('"','""');
-    const TALLA = (meta.TALLA||'').replaceAll('"','""');
-    const TEMP = (meta.TEMPORADA||'').replaceAll('"','""');
-    rows.push(`"${String(bc).replaceAll('"','""')}","${MOD}","${COLOR}","${TALLA}","${TEMP}"`);
+/* ---------- Storage: catálogo CSV ---------- */
+function catalogoCSV(){
+  const rows=['bc,MOD,COLOR,TALLA,TEMPORADA'];
+  for(const [bc,meta] of state.catalog.entries()){
+    const esc=s=>String(s??'').replaceAll('"','""');
+    rows.push(`"${esc(bc)}","${esc(meta.MOD)}","${esc(meta.COLOR)}","${esc(meta.TALLA)}","${esc(meta.TEMPORADA)}"`);
   }
   return rows.join('\n');
 }
-async function subirCatalogoAStorage(folio) {
-  if (!state.catalog.size) { alert('Primero carga el catálogo en esta computadora.'); return; }
-  setStatus('Empaquetando catálogo (CSV)…');
-  const csv = catalogoComoCSV();
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-
-  const btn = btnSubirCatS; const old = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
-
-  try {
-    const fileRef = ref(storage, `catalogos/${folio}.csv`);
-    const task = uploadBytesResumable(fileRef, blob, { contentType: 'text/csv;charset=utf-8' });
-
-    task.on('state_changed',
-      snap => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setStatus(`Subiendo a Storage… ${pct}% (${fmtBytes(snap.bytesTransferred)}/${fmtBytes(snap.totalBytes)})`);
-      },
-      err => { alert('❌ Error subiendo a Storage: ' + (err?.message || err)); setStatus('❌ Error subiendo a Storage.'); },
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        await setDoc(doc(db, 'ciclicos', folio), { catalogUrl: url, actualizado: serverTimestamp() }, { merge: true });
-        setStatus('✅ Catálogo subido y URL guardada en el folio.');
-        alert('✅ Catálogo listo en Storage.\nSe guardó la URL en el folio.');
-      }
-    );
-  } catch(e) {
-    alert('❌ Error subiendo: ' + (e?.message || e));
-    setStatus('❌ Error subiendo a Storage.');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = old || 'Subir catálogo (Storage)'; }
-  }
+async function subirCatalogoStorage(folio){
+  if(!state.catalog.size) return alert('Primero carga el catálogo.');
+  const csv=catalogoCSV(); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const r=ref(storage, `catalogos/${folio}.csv`);
+  const task=uploadBytesResumable(r, blob, { contentType:'text/csv;charset=utf-8' });
+  task.on('state_changed',
+    s=>{ const pct=Math.round(100*s.bytesTransferred/s.totalBytes); setStatus(`Subiendo a Storage… ${pct}%`); },
+    e=>{ alert('❌ Error subiendo: '+(e?.message||e)); setStatus('❌ Error subiendo catálogo.'); },
+    async()=>{ const url=await getDownloadURL(task.snapshot.ref); await setDoc(doc(db,'ciclicos',folio),{catalogUrl:url, actualizado:serverTimestamp()},{merge:true}); setStatus('✅ Catálogo subido y URL guardada.'); alert('✅ Catálogo listo en Storage.'); }
+  );
 }
-async function cargarCatalogoDesdeStorage(folio) {
-  setStatus('Leyendo URL de catálogo del folio…');
-  const snap = await getDoc(doc(db, 'ciclicos', folio));
-  if (!snap.exists()) { alert('No existe el folio en Firestore.'); return; }
-  const data = snap.data();
-  const url = data?.catalogUrl;
-  if (!url) { alert('Este folio no tiene catalogUrl (Storage).'); return; }
-
+async function cargarCatalogoStorage(folio){
+  setStatus('Leyendo URL de catálogo…');
+  const d=await getDoc(doc(db,'ciclicos',folio)); if(!d.exists()){ alert('No existe el folio.'); return; }
+  const url=d.data()?.catalogUrl; if(!url){ alert('Este folio no tiene catalogUrl.'); return; }
   setStatus('Descargando catálogo (Storage)…');
-  const resp = await fetch(url, { cache: 'no-store' });
-  if (!resp.ok) throw new Error('No se pudo descargar el CSV del catálogo.');
-  const text = await resp.text();
-
-  procesarCatalogoDesdeTexto(text);
-  setStatus(`Catálogo cargado desde Storage: ${state.catalog.size} códigos.`);
-  alert(`Catálogo cargado (Storage): ${state.catalog.size} códigos.`);
+  const res=await fetch(url,{cache:'no-store'}); if(!res.ok) throw new Error('No se pudo descargar el catálogo.');
+  const txt=await res.text(); procesarCatalogoDesdeTexto(txt); setStatus(`Catálogo cargado (Storage): ${state.catalog.size} códigos.`);
 }
 
-/* ===== Botones Folio ===== */
-btnPublicar?.addEventListener('click', async () => {
-  const folio = (folioInput?.value || '').trim() || generarFolio();
-  if (folioInput) folioInput.value = folio;
-  btnPublicar.disabled = true; const oldText = btnPublicar.textContent; btnPublicar.textContent = 'Publicando…';
-  try {
-    if (!navigator.onLine) throw new Error('Sin conexión (offline)');
-    if (!state.existencia || !state.existencia.size) { const ok = confirm('No hay existencia cargada. ¿Publicar solo el cíclico (sin existencia)?'); if (!ok) return; }
-    setStatus(`Paso 1/2: guardando encabezado…`);
-    await setDoc(doc(db, "ciclicos", folio), { folio, almacen: selAlmacen?.value || 'GLOBAL', dispositivo: deviceId, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
-    if (state.existencia && state.existencia.size) {
-      setStatus(`Paso 2/2: subiendo existencia (${state.existencia.size} claves)…`);
-      await publicarCiclico(folio, {}, state.existencia);
-    }
-    setStatus(`✅ Publicado: ${folio}`);
-    alert(`✅ Cíclico publicado\nFolio: ${folio}\nClaves existencia: ${state.existencia.size || 0}`);
-  } catch (e) {
-    setStatus(`❌ Error publicando: ${e?.message || e}`); alert('❌ Error al publicar: ' + (e?.message || e));
-  } finally {
-    btnPublicar.disabled = false; btnPublicar.textContent = oldText || 'Publicar cíclico';
-  }
-});
-btnVerificar?.addEventListener('click', async ()=>{
-  const folio = (folioInput?.value || '').trim(); if (!folio) { alert('Escribe o genera un folio.'); return; }
+/* ---------- Botones folio ---------- */
+el('btnPublicarFolio')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim() || generarFolio(); if(folioInput) folioInput.value=folio;
   try{
-    setStatus('Verificando en Firestore…');
-    const snap = await getDoc(doc(db, 'ciclicos', folio));
-    if (!snap.exists()){ setStatus('No existe el documento del folio en Firestore.'); alert('ℹ️ No se encontró el folio en Firestore.'); return; }
-    const exiSnap = await getDocs(collection(db, `ciclicos/${folio}/existencia`));
-    setStatus(`Folio existe. Claves de existencia: ${exiSnap.size}`); alert(`✅ Folio encontrado. Claves: ${exiSnap.size}`);
-  }catch(e){ setStatus(`❌ Error verificando: ${e?.message || e}`); alert('❌ Error verificando: ' + (e?.message || e)); }
+    setStatus('Publicando…');
+    await publicarCiclico(folio, state.existencia);
+    setStatus(`✅ Publicado: ${folio}`);
+    alert('✅ Publicado');
+  }catch(e){ setStatus('❌ Error publicando: '+(e?.message||e)); alert('❌ Error publicando: '+(e?.message||e)); }
 });
-btnCargarFol?.addEventListener('click', async ()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio.'); return; }
-  try{ 
-    await cargarCatalogoDesdeStorage(folio);
-    await cargarExistenciaDeNube(folio);
-    setStatus(`Folio cargado: ${folio}`); 
-    alert(`Folio ${folio} listo (catálogo + existencia).`); 
-  }catch(e){ alert('Error al cargar de nube: '+(e?.message||e)); }
+el('btnCargarFolio')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
+  try{ await cargarCatalogoStorage(folio); await cargarExistenciaNube(folio); alert('Folio cargado.'); }catch(e){ alert('Error al cargar: '+(e?.message||e)); }
 });
-btnActExi?.addEventListener('click', async ()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio.'); return; }
-  if(!state.existencia||!state.existencia.size){ alert('No hay existencia en pantalla.'); return; }
-  try{ await publicarCiclico(folio, {}, state.existencia); setStatus(`Existencia actualizada en nube para: ${folio}`); alert(`Existencia actualizada para folio ${folio}.`); }catch(e){ alert('Error al actualizar existencia: '+(e?.message||e)); }
+el('btnActualizarExistencia')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
+  if(!state.existencia.size) return alert('No hay existencia en pantalla.');
+  try{ await publicarCiclico(folio, state.existencia); alert('Existencia actualizada.'); }catch(e){ alert('Error: '+(e?.message||e)); }
 });
-btnSubirCatS?.addEventListener('click', async ()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio.'); return; }
-  try{ await subirCatalogoAStorage(folio); }catch(e){ alert('❌ Error subiendo a Storage: '+(e?.message||e)); }
+el('btnVerificarFolio')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
+  try{ const d=await getDoc(doc(db,'ciclicos',folio)); if(!d.exists()) return alert('No existe el folio.'); const exi=await getDocs(collection(db,`ciclicos/${folio}/existencia`)); alert(`Folio OK. Claves exi: ${exi.size}`); }catch(e){ alert('Error: '+(e?.message||e)); }
 });
-btnCargarCatS?.addEventListener('click', async ()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio.'); return; }
-  try{ await cargarCatalogoDesdeStorage(folio); }catch(e){ alert('❌ Error cargando de Storage: '+(e?.message||e)); }
+el('btnSubirCatalogoStorage')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
+  try{ await subirCatalogoStorage(folio); }catch(e){ alert('Error: '+(e?.message||e)); }
 });
-btnTestStorage?.addEventListener('click', async ()=>{
-  try {
-    const folio = (folioInput?.value || 'TEST').toUpperCase();
-    const blob = new Blob([`folio,${folio},ts,${Date.now()}\n`], {type:'text/csv;charset=utf-8'});
-    const r = ref(storage, `catalogos/${folio}-test.csv`);
-    const task = uploadBytesResumable(r, blob);
-    task.on('state_changed',
-      s => { const p = Math.round(100*s.bytesTransferred/s.totalBytes);
-             setStatus(`Test subida… ${p}%`); },
-      err => alert('❌ Test Storage: '+(err?.message||err)),
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        setStatus(`✅ Test OK: ${url}`);
-        alert('✅ Test de Storage subido correctamente.');
-      }
-    );
-  } catch(e){ alert('❌ Test Storage: '+(e?.message||e)); }
+el('btnCargarCatalogoStorage')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
+  try{ await cargarCatalogoStorage(folio); }catch(e){ alert('Error: '+(e?.message||e)); }
 });
 
-/* ===== Reporte ===== */
+/* ---------- Reporte / Historial ---------- */
 function computeReport(){ const esc=group(state.scans), exi=state.existencia, sob=new Map(), fal=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); keys.forEach(k=>{ const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sob.set(k,e-x); if(x-e>0) fal.set(k,x-e); }); return {escT,sob,falt:fal}; }
-el('btnGenerarReporte')?.addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); setHTML('tablaEscaneados',renderTable(escT)); setHTML('tablaSobrantes',renderTable(sob)); setHTML('tablaFaltantes',renderTable(falt)); });
-el('btnExportarCSV')?.addEventListener('click', ()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(name,map)=>{ for(const [k,v] of map) csv+=`${name},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
+el('btnGenerarReporte')?.addEventListener('click',()=>{ const {escT,sob,falt}=computeReport(); setHTML('tablaEscaneados',renderTable(escT)); setHTML('tablaSobrantes',renderTable(sob)); setHTML('tablaFaltantes',renderTable(falt)); });
+el('btnExportarCSV')?.addEventListener('click',()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(n,m)=>{ for(const [k,v] of m) csv+=`${n},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
 
-/* ===== Historial local ===== */
-function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); setHTML('histList',html.join('')); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#escanear'; window.dispatchEvent(new HashChangeEvent('hashchange')); })); }
+function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); setHTML('histList',html.join('')); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#escanear'; })); }
 function saveHist(nombre='Cíclico'){ const hist=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const payload={ts:Date.now(), nombre, scans:[...state.scans], existencia:Object.fromEntries(state.existencia), catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}; hist.unshift(payload); localStorage.setItem('conteo_cklass_hist', JSON.stringify(hist.slice(0,50))); renderHist(); alert('Histórico guardado.'); }
-el('btnGuardarHistorico')?.addEventListener('click', ()=>{ const nombre=prompt('Nombre del conteo / folio','Cíclico'); if(!nombre) return; saveHist(nombre); });
-el('btnNuevaSesion')?.addEventListener('click', ()=>{ state.scans=[]; refreshUI(); setText('lastStatus','Sesión reiniciada.'); });
+el('btnGuardarHistorico')?.addEventListener('click',()=>{ const n=prompt('Nombre del conteo / folio','Cíclico'); if(!n) return; saveHist(n); });
+el('btnNuevaSesion')?.addEventListener('click',()=>{ state.scans=[]; refreshUI(); setText('lastStatus','Sesión reiniciada.'); });
 
-/* ===== Init ===== */
-window.addEventListener('DOMContentLoaded', async ()=>{
+/* ---------- Init ---------- */
+addEventListener('DOMContentLoaded', async()=>{
   try{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(raw){ const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); } }catch{}
   refreshUI(); renderHist();
-  const f=new URLSearchParams(location.search).get('folio');
-  if(f){ const F=f.toUpperCase(); const i=el('folioInput'); if(i) i.value=F; setStatus('Folio desde URL: '+F); try{ await cargarCatalogoDesdeStorage(F); await cargarExistenciaDeNube(F); }catch(e){ /* no-op */ } }
+  const f=new URLSearchParams(location.search).get('folio'); if(f){ const F=f.toUpperCase(); folioInput.value=F; try{ await cargarCatalogoStorage(F); await cargarExistenciaNube(F); }catch{} }
 });
 </script>
 </body>
