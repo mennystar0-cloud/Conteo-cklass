@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS – Cíclicos</title>
+  <title>Conteo CKLASS – Cíclicos (Storage+Firestore)</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
@@ -31,7 +31,7 @@
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
     <h1 class="text-2xl font-bold">Módulo de Conteo – Catálogo en Storage + Existencia en Firestore</h1>
-    <p class="text-sm text-gray-600">1) Importar catálogo · 2) Subir catálogo (Storage) · 3) Existencia · 4) Publicar folio · 5) Cargar en celulares.</p>
+    <p class="text-sm text-gray-600">1) Importar catálogo · 2) Subir catálogo (Storage) · 3) Cargar/pegar existencia · 4) Publicar cíclico · 5) Cargar en celulares por <code>?folio=</code>.</p>
   </header>
 
   <!-- Tabs -->
@@ -50,7 +50,7 @@
       <!-- Catálogo -->
       <div class="card">
         <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Columnas comunes: <code>CÓDIGO DE BARRAS / EAN / UPC</code>, <code>MOD/MODELO</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Columnas típicas: <code>CÓDIGO DE BARRAS / EAN / UPC</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code>.</p>
         <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div class="flex gap-2 mt-2">
           <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar guardado</button>
@@ -61,18 +61,18 @@
         <div id="catalogoGuardadoStatus" class="text-xs text-gray-600 mt-1">—</div>
 
         <details class="mt-3">
-          <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
+          <summary class="text-sm font-medium">Diagnóstico catálogo / Mapeo manual</summary>
           <div class="text-xs mono mt-2">
             <div id="catalogDiag">—</div>
             <div id="catalogFirstRows" class="mt-2"></div>
             <div class="mt-3 p-2 bg-gray-50 rounded-lg">
               <div class="text-[11px] mb-1">Si no detecta encabezados, mapea manualmente:</div>
               <div class="grid grid-cols-2 gap-2">
-                <label class="text-[11px]">Código de barras<select id="mapBC" class="border rounded p-1 text-xs"></select></label>
+                <label class="text-[11px]">Código<select id="mapBC" class="border rounded p-1 text-xs"></select></label>
                 <label class="text-[11px]">MOD<select id="mapMOD" class="border rounded p-1 text-xs"></select></label>
                 <label class="text-[11px]">COLOR<select id="mapCOLOR" class="border rounded p-1 text-xs"></select></label>
                 <label class="text-[11px]">TALLA<select id="mapTALLA" class="border rounded p-1 text-xs"></select></label>
-                <label class="text-[11px]">TEMPORADA<select id="mapTEMP" class="border rounded p-1 text-xs"></select></label>
+                <label class="text-[11px]">TEMP<select id="mapTEMP" class="border rounded p-1 text-xs"></select></label>
               </div>
               <div class="mt-2">
                 <button id="btnAplicarMapa" class="btn bg-gray-200">Aplicar mapeo manual</button>
@@ -127,12 +127,13 @@
         <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (nube)</button>
         <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia</button>
         <button id="btnVerificarFolio" class="btn bg-gray-200">Verificar publicación</button>
-
-        <!-- NUEVO: catálogo en Storage -->
+        <!-- Storage -->
         <button id="btnSubirCatalogoStorage" class="btn bg-fuchsia-600 text-white">Subir catálogo (Storage)</button>
         <button id="btnCargarCatalogoStorage" class="btn bg-fuchsia-200">Cargar catálogo (Storage)</button>
+        <!-- Test Storage -->
+        <button id="btnTestStorage" class="btn bg-gray-100">Probar Storage</button>
       </div>
-      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue solo (catálogo desde Storage + existencia).</p>
+      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue catálogo (Storage) + existencia (Firestore).</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
     </div>
   </section>
@@ -203,7 +204,7 @@
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Catálogo en Firebase Storage (1 archivo, con progreso). Existencia/escaneos en Firestore. Lectura pública, escritura controlada.
+    Catálogo en Firebase Storage (CSV con progreso). Existencia en Firestore. Escaneo en vivo.
   </footer>
 </div>
 
@@ -213,27 +214,22 @@ const $ = s => document.querySelector(s);
 const el = id => document.getElementById(id);
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:el('tab-importar'),escanear:el('tab-escanear'),reporte:el('tab-reporte'),historial:el('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,elx])=>{elx?.classList.toggle('hidden',k!==t);elx?.classList.toggle('block',k===t);});location.hash='#'+t;}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));window.addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1));})();
 
-/* ===== Utilidades ===== */
+/* ===== Util ===== */
 function setText(id, txt){ const e=el(id); if(e) e.textContent=txt; }
 function setHTML(id, html){ const e=el(id); if(e) e.innerHTML=html; }
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function withTimeout(promise, ms, label='op'){ let t; const to=new Promise((_,rej)=>t=setTimeout(()=>rej(new Error(`Timeout (${label}) ${ms}ms`)),ms)); try{ return await Promise.race([promise,to]); } finally{ clearTimeout(t); } }
-function showDiag(msg){ const d=el('diag'); if(d) d.textContent=String(msg); }
 function fmtBytes(b){ if(!b&&b!==0) return '-'; const u=['B','KB','MB','GB']; let i=0; let x=b; while(x>=1024 && i<u.length-1){ x/=1024; i++; } return `${x.toFixed(1)} ${u[i]}`; }
+function renderTable(map){return `<table class="min-w-full text-sm table"><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('')}</tbody></table>`;}
+function group(list){const m=new Map();list.forEach(k=>{ if(!String(k).startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1);});return m;}
+function showDiag(msg){ const d=el('diag'); if(d) d.textContent=String(msg); }
 
 /* ===== Estado ===== */
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
 const deviceId=(localStorage.getItem('conteo_device_id')||(crypto.randomUUID?.()||String(Math.random()).slice(2))); localStorage.setItem('conteo_device_id',deviceId);
-function renderTable(map){return `<table class="min-w-full text-sm table"><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('')}</tbody></table>`;}
-function group(list){const m=new Map();list.forEach(k=>{ if(!String(k).startsWith('[NO ENCONTRADO]')) m.set(k,(m.get(k)||0)+1);});return m;}
 function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos cargados.`); setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`); setText('existenciaStatus', `${state.existencia.size||0} claves.`); setHTML('existenciaPreview', renderTable(state.existencia)); setHTML('scanLog', '<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>'); setHTML('scanGrouped', renderTable(group(state.scans))); }
 
-/* ===== Audio OK/ERR ===== */
-let aOK=new Audio(), aERR=new Audio(), audioReady=false;
-function prepAudio(){ try{ aOK.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; aERR.src='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAABAAABAgAA'; audioReady=true; }catch{} }
-document.body.addEventListener('click', ()=>{ if(!audioReady) prepAudio(); }, {once:true});
-
-/* ===== CSV utils robustas ===== */
+/* ===== CSV utils ===== */
 async function readFileSmart(file){
   try { const t = await file.text(); if (t && t.split(/\r?\n/).filter(l=>l.trim()).length > 1) return t; } catch {}
   try { const ab = await file.arrayBuffer(); const dec = new TextDecoder('windows-1252'); const t = dec.decode(ab); return t; } catch {}
@@ -355,7 +351,7 @@ el('btnBorrarCatalogo')?.addEventListener('click', ()=>{
   localStorage.removeItem('catalogo_fixed_v1'); setText('catalogoGuardadoStatus','Catálogo eliminado.');
 });
 
-/* ===== Existencia (CSV o pegado) ===== */
+/* ===== Existencia ===== */
 function parseExistenciaCSV(text){
   const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim());
   if(!lines.length){alert('Archivo de existencia vacío.'); setHTML('existDiag','EXI vacío (0 líneas).'); return;}
@@ -409,7 +405,7 @@ el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.
 el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
 el('btnLimpiarExistencia')?.addEventListener('click',()=>{ const tx=el('existenciaInput'); if(tx) tx.value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
-/* ===== Cámara + manual ===== */
+/* ===== Cámara y manual ===== */
 const video=el('videoCam'); const cameraSelect=el('cameraSelect');
 let stream=null, scanning=false, lastCode='', lastTs=0;
 async function listCameras(){ const devices=await navigator.mediaDevices.enumerateDevices().catch(()=>[]); const cams=(devices||[]).filter(d=>d.kind==='videoinput'); if(cameraSelect) cameraSelect.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}">${c.label||('Cámara '+(i+1))}</option>`).join(''); }
@@ -430,23 +426,23 @@ function handleKeyFromCode(code){
 function handleCode(code){
   const now=Date.now(); if(code===lastCode && now-lastTs<900) return; lastCode=code; lastTs=now;
   const {key, ok}=handleKeyFromCode(code);
-  if(!ok){ if(el('chkBeep')?.checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
-  if(el('chkBeep')?.checked && audioReady) aOK.play().catch(()=>{});
+  if(!ok){ if(el('chkBeep')?.checked) {/* se puede agregar audio error */} alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
+  if(el('chkBeep')?.checked){ /* audio ok opcional */ }
   if(el('chkAuto')?.checked){ state.scans.push(key); refreshUI(); } else { const si=el('scanInput'); if(si) si.value=key; }
   setText('lastStatus','Leído: '+code);
 }
 el('scanInput')?.addEventListener('keydown',e=>{
   if(e.key!=='Enter') return; const v=e.target.value.trim(); e.target.value=''; if(!v) return;
   const {key, ok}=handleKeyFromCode(v);
-  if(!ok){ if(el('chkBeep')?.checked && audioReady) aERR.play().catch(()=>{}); alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
-  if(el('chkBeep')?.checked && audioReady) aOK.play().catch(()=>{});
+  if(!ok){ if(el('chkBeep')?.checked){} alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
+  if(el('chkBeep')?.checked) {}
   state.scans.push(key); refreshUI();
 });
 
-/* ===== Firebase (CDN v12) ===== */
+/* ===== Firebase ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-import { getFirestore, doc, setDoc, writeBatch, collection, addDoc, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL, setMaxUploadRetryTime, setMaxOperationRetryTime } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
@@ -460,18 +456,19 @@ const firebaseConfig = {
 const appFB = initializeApp(firebaseConfig);
 const db = getFirestore(appFB);
 const storage = getStorage(appFB);
+try { setMaxUploadRetryTime(storage, 300000); setMaxOperationRetryTime(storage, 300000); } catch {}
 
-/* ===== Folios: generación y estado ===== */
+/* ===== Folio / meta ===== */
 const selAlmacen=el('selAlmacen'); const folioInput=el('folioInput');
 const btnGenerar=el('btnGenerarFolio'); const btnPublicar=el('btnPublicarFolio');
 const btnCargarFol=el('btnCargarFolio'); const btnActExi=el('btnActualizarExistencia'); const btnVerificar=el('btnVerificarFolio');
-const btnSubirCatS=el('btnSubirCatalogoStorage'); const btnCargarCatS=el('btnCargarCatalogoStorage');
+const btnSubirCatS=el('btnSubirCatalogoStorage'); const btnCargarCatS=el('btnCargarCatalogoStorage'); const btnTestStorage=el('btnTestStorage');
 function setStatus(txt){ setText('folioStatus', txt); showDiag(txt); }
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 function generarFolio(){ const now=new Date(); const mesTxt=MES_ABR[now.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const yyyymm=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`; const seqKey=`folio_seq_${yyyymm}_${alm}`; const next=(parseInt(localStorage.getItem(seqKey)||'0',10)+1); localStorage.setItem(seqKey,String(next)); const nStr=String(next).padStart(5,'0'); return `${mesTxt}${alm}${nStr}`; }
 btnGenerar?.addEventListener('click',()=>{ const folio=generarFolio(); if(folioInput) folioInput.value=folio; setStatus(`Folio generado: ${folio}`); });
 
-/* ===== Existencia a Firestore ===== */
+/* ===== Firestore: publicar y cargar existencia ===== */
 async function publicarCiclico(folio, meta = {}, existenciaMap = new Map()) {
   await setDoc(doc(db, "ciclicos", folio), { folio, ...meta, actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge: true });
   if (!existenciaMap || !existenciaMap.size) return;
@@ -501,7 +498,7 @@ async function cargarExistenciaDeNube(folio) {
   refreshUI();
 }
 
-/* ===== Catálogo en Storage (1 archivo) + PROGRESO ===== */
+/* ===== Storage: catálogo CSV en /catalogos/FOLIO.csv ===== */
 function catalogoComoCSV() {
   const rows = ['bc,MOD,COLOR,TALLA,TEMPORADA'];
   for (const [bc, meta] of state.catalog.entries()) {
@@ -515,13 +512,11 @@ function catalogoComoCSV() {
 }
 async function subirCatalogoAStorage(folio) {
   if (!state.catalog.size) { alert('Primero carga el catálogo en esta computadora.'); return; }
-
   setStatus('Empaquetando catálogo (CSV)…');
   const csv = catalogoComoCSV();
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
 
-  const btn = document.getElementById('btnSubirCatalogoStorage');
-  const old = btn ? btn.textContent : '';
+  const btn = btnSubirCatS; const old = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
 
   try {
@@ -533,10 +528,7 @@ async function subirCatalogoAStorage(folio) {
         const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
         setStatus(`Subiendo a Storage… ${pct}% (${fmtBytes(snap.bytesTransferred)}/${fmtBytes(snap.totalBytes)})`);
       },
-      err => {
-        alert('❌ Error subiendo a Storage: ' + (err?.message || err));
-        setStatus('❌ Error subiendo a Storage.');
-      },
+      err => { alert('❌ Error subiendo a Storage: ' + (err?.message || err)); setStatus('❌ Error subiendo a Storage.'); },
       async () => {
         const url = await getDownloadURL(task.snapshot.ref);
         await setDoc(doc(db, 'ciclicos', folio), { catalogUrl: url, actualizado: serverTimestamp() }, { merge: true });
@@ -569,7 +561,7 @@ async function cargarCatalogoDesdeStorage(folio) {
   alert(`Catálogo cargado (Storage): ${state.catalog.size} códigos.`);
 }
 
-/* ===== Registrar clicks Folio ===== */
+/* ===== Botones Folio ===== */
 btnPublicar?.addEventListener('click', async () => {
   const folio = (folioInput?.value || '').trim() || generarFolio();
   if (folioInput) folioInput.value = folio;
@@ -622,6 +614,24 @@ btnSubirCatS?.addEventListener('click', async ()=>{
 btnCargarCatS?.addEventListener('click', async ()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio){ alert('Escribe o genera un folio.'); return; }
   try{ await cargarCatalogoDesdeStorage(folio); }catch(e){ alert('❌ Error cargando de Storage: '+(e?.message||e)); }
+});
+btnTestStorage?.addEventListener('click', async ()=>{
+  try {
+    const folio = (folioInput?.value || 'TEST').toUpperCase();
+    const blob = new Blob([`folio,${folio},ts,${Date.now()}\n`], {type:'text/csv;charset=utf-8'});
+    const r = ref(storage, `catalogos/${folio}-test.csv`);
+    const task = uploadBytesResumable(r, blob);
+    task.on('state_changed',
+      s => { const p = Math.round(100*s.bytesTransferred/s.totalBytes);
+             setStatus(`Test subida… ${p}%`); },
+      err => alert('❌ Test Storage: '+(err?.message||err)),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        setStatus(`✅ Test OK: ${url}`);
+        alert('✅ Test de Storage subido correctamente.');
+      }
+    );
+  } catch(e){ alert('❌ Test Storage: '+(e?.message||e)); }
 });
 
 /* ===== Reporte ===== */
