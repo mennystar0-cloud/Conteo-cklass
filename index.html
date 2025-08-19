@@ -454,9 +454,14 @@ el('btnPublicarFolio')?.addEventListener('click', async()=>{
     alert('✅ Publicado');
   }catch(e){ setStatus('❌ Error publicando: '+(e?.message||e)); alert('❌ Error publicando: '+(e?.message||e)); }
 });
-el('btnCargarFolio')?.addEventListener('click', async()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  try{ await cargarCatalogoStorage(folio); await cargarExistenciaNube(folio); alert('Folio cargado.'); }catch(e){ alert('Error al cargar: '+(e?.message||e)); }
+el('btnCargarFolio')?.addEventListener('click', async ()=>{
+  const folio = (folioInput?.value||'').trim();
+  if (!folio) return alert('Escribe o genera un folio.');
+  try {
+    await cargarCatalogoStorage(folio);     // <- ahora siempre tira a Storage
+    await cargarExistenciaNube(folio);      // existencia desde Firestore
+    alert('Folio cargado.');
+  } catch {}
 });
 el('btnActualizarExistencia')?.addEventListener('click', async()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
