@@ -244,18 +244,28 @@ async function guardarCatalogoCache(){ await idbSet('master',{catalog:[...state.
 async function cargarCatalogoStorage(show=true){
   try{
     setText('masterStatus','Descargando catálogo de Storage…');
-    const url = await getDownloadURL(ref(storage,'static/catalogo-master.csv'));
-    const res = await fetch(url, {mode:'cors', cache:'no-store'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    parseCatalogCSV(text); await guardarCatalogoCache();
-    setHTML('catalogDiag',`OK · Registros: ${state.catalog.size}`); setText('masterStatus',`MAESTRO (Storage): ${state.catalog.size} códigos (cache actualizado)`);
-    if(show) alert('Catálogo actualizado desde Storage.');
-  }catch(e){ setText('masterStatus','❌ Error cargando catálogo: '+(e?.message||e)); setHTML('catalogDiag','Revisa rules y ruta static/catalogo-master.csv'); if(show) alert('❌ '+(e?.message||e)); }
-}
-el('btnRecargarCloud').addEventListener('click',()=>cargarCatalogoStorage(true));
-el('btnResumenCat').addEventListener('click',()=>alert(`Catálogo: ${state.catalog.size} · Claves: ${state.indexByKey.size}`));
-el('btnBorrarCat').addEventListener('click',async()=>{ await idbSet('master',null); state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear(); setText('masterStatus','Caché borrada. Pulsa "Recargar desde Storage".'); refresh(); });
+    const r = ref(storage, STORAGE_CATALOG_PATH);
 
+    // Opción 1 (preferida): directo desde Storage, sin CORS
+    const bytes = await getBytes(r);              // ← evita “Failed to fetch”
+    const text  = new TextDecoder('utf-8').decode(bytes);
+
+    // Opción 2 (solo para diagnóstico): descomenta si quieres ver la URL pública
+    // const url = await getDownloadURL(r); console.log('URL Storage:', url);
+
+    parseCatalogCSV(text);
+    await guardarCatalogoCache();
+    setHTML('catalogDiag',`OK · Registros: ${state.catalog.size}`);
+    setText('masterStatus',`MAESTRO (Storage): ${state.catalog.size} códigos (cache actualizado)`);
+    if(show) alert('Catálogo actualizado desde Storage.');
+  }catch(e){
+    // Mensaje más claro
+    const msg = e?.message || e?.code || String(e);
+    setText('masterStatus','❌ Error cargando catálogo: '+ msg);
+    setHTML('catalogDiag','Revisa rules y la ruta '+STORAGE_CATALOG_PATH);
+    alert('❌ Error cargando catálogo: ' + msg);
+  }
+}
 /* ======= Existencia ======= */
 function parseExistenciaCSV(text){
   const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Existencia vacía.'); return; }
