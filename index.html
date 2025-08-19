@@ -207,7 +207,7 @@ const db = getFirestore(app);
 
 /* ====== Catálogo (FETCH directo a URL pública) ====== */
 // 👇 REEMPLAZA ESTA CONSTANTE CON TU URL PÚBLICA (la que termina en alt=media)
-const STORAGE_CATALOG_URL = "PASTE_YOUR_PUBLIC_CSV_URL_HERE";
+const STORAGE_CATALOG_URL = "https://firebasestorage.googleapis.com/v0/b/cklass-conteo.firebasestorage.app/o/static%2Fcatalogo-master.csv?alt=media&token=fe287ea9-d6b2-4b7b-8aa4-9590b00e7bf8";
 
 function detectDelim(line){ if(line.includes('\t')) return '\t'; const c=(line.match(/,/g)||[]).length, s=(line.match(/;/g)||[]).length; return s>c?';':','; }
 function splitCSV(line,d){ const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch=='"'){ if(q&&line[i+1]=='"'){cur+='"';i++;}else q=!q; } else if(ch===d && !q){out.push(cur);cur='';} else cur+=ch;} out.push(cur); return out; }
