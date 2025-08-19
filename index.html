@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS – Catálogo en Storage + Existencia en Firestore</title>
+  <title>Conteo CKLASS – Catálogo embebido (PWA)</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
   <script>
     if ("serviceWorker" in navigator) {
-      addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=6").catch(()=>{}));
+      addEventListener("load", () => {
+        // Sube este query (?v=cat_v2, cat_v3, …) cuando reemplaces el CSV
+        navigator.serviceWorker.register("./service-worker.js?v=cat_v1").catch(()=>{});
+      });
     }
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -18,14 +21,16 @@
     .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
     .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
     .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
-    details>summary{cursor:pointer;user-select:none}
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
-    <h1 class="text-2xl font-bold">Módulo de Conteo – Storage + Firestore</h1>
-    <p class="text-sm text-gray-600">1) Catálogo → 2) Existencia → 3) Publicar cíclico → 4) Cargar en celulares con <code>?folio=</code>.</p>
+    <h1 class="text-2xl font-bold">Módulo de Conteo — Catálogo embebido</h1>
+    <p class="text-sm text-gray-600">
+      El catálogo maestro viene dentro de la PWA (pre-cache + IndexedDB).
+      Cada cíclico solo sube/carga <b>existencia</b>.
+    </p>
   </header>
 
   <!-- Tabs -->
@@ -42,15 +47,17 @@
     <div class="grid md:grid-cols-2 gap-4">
       <!-- Catálogo -->
       <div class="card">
-        <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Encabezados: <code>CÓDIGO DE BARRAS/EAN/UPC</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code> (opcional).</p>
-        <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
-        <div class="flex gap-2 mt-2">
-          <button id="btnFijarCatalogo" class="btn bg-blue-600 text-white">Guardar local</button>
-          <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar local</button>
-          <button id="btnBorrarCatalogo" class="btn bg-red-600 text-white">Borrar local</button>
+        <h2 class="font-semibold mb-2">Catálogo maestro (embebido)</h2>
+        <p class="text-xs text-gray-600 mb-2">
+          Se carga automáticamente desde <code>static/catalogo-master.csv</code> y se guarda en IndexedDB.
+          No requiere Firebase. Para actualizar: reemplaza el CSV y sube versión.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnForzarLeerCSV" class="btn bg-gray-100">Forzar lectura de CSV embebido</button>
+          <button id="btnMostrarResumen" class="btn bg-gray-100">Resumen catálogo</button>
+          <button id="btnBorrarMaestro" class="btn bg-red-600 text-white">Borrar MAESTRO local</button>
         </div>
-        <div id="catalogoStatus" class="text-xs text-gray-600 mt-2">Sin cargar.</div>
+        <div id="masterStatus" class="text-xs text-gray-600 mt-2">—</div>
         <details class="mt-3">
           <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
           <div class="text-xs mt-2" id="catalogDiag">—</div>
@@ -61,7 +68,10 @@
       <!-- Existencia -->
       <div class="card">
         <h2 class="font-semibold mb-2">Existencia física (CSV / pegado)</h2>
-        <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code> · ó <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">
+          Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> ·
+          <code>MOD,COLOR-TALLA[,CANT]</code> · ó <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.
+        </p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
         <div class="bg-gray-50 rounded-xl p-2 mt-3">
@@ -94,15 +104,13 @@
         </select>
         <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Vacío = generar automático" />
         <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
-        <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico</button>
+        <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico (existencia)</button>
       </div>
       <div class="mt-2 flex flex-wrap gap-2">
-        <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (nube)</button>
-        <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia</button>
-        <button id="btnSubirCatalogoStorage" class="btn bg-fuchsia-600 text-white">Subir catálogo (Storage)</button>
-        <button id="btnCargarCatalogoStorage" class="btn bg-fuchsia-200">Cargar catálogo (Storage)</button>
+        <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (existencia)</button>
+        <button id="btnVerificar" class="btn bg-gray-100">Verificar publicación</button>
       </div>
-      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code>.</p>
+      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code>. El catálogo ya viene embebido.</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
     </div>
   </section>
@@ -132,7 +140,7 @@
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Catálogo en Firebase Storage (CSV). Existencia en Firestore. SW cache-bust (?v=6).
+    Catálogo embebido en <code>static/catalogo-master.csv</code> (pre-cache + IndexedDB). Existencia en Firestore.
   </footer>
 </div>
 
@@ -141,7 +149,7 @@
 </script>
 
 <script type="module">
-/* ---------------- Util / UI ---------------- */
+/* --------- Util / UI --------- */
 const $ = s => document.querySelector(s); const el = id => document.getElementById(id);
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:el('tab-importar'),reporte:el('tab-reporte'),historial:el('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t)});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t)});location.hash='#'+t}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1))})();
 function setText(id,t){const e=el(id); if(e) e.textContent=t;}
@@ -152,30 +160,33 @@ function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 const norm=s=>(s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
 const canon=s=>norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
 
-/* ---------------- Estado ---------------- */
-const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
-function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos cargados.`); setHTML('existenciaPreview', renderTable(state.existencia)); setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`); setText('existenciaStatus', `${state.existencia.size||0} claves.`); }
+/* --------- IndexedDB (MAESTRO) --------- */
+const IDB_DB='cklass_conteo_db', IDB_STORE='master_catalog_v1';
+function idbOpen(){return new Promise((res,rej)=>{const rq=indexedDB.open(IDB_DB,1);rq.onupgradeneeded=()=>rq.result.createObjectStore(IDB_STORE);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function idbGet(key){const db=await idbOpen();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readonly');const st=tx.objectStore(IDB_STORE);const rq=st.get(key);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function idbSet(key,val){const db=await idbOpen();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readwrite');const st=tx.objectStore(IDB_STORE);const rq=st.put(val,key);rq.onsuccess=()=>res();rq.onerror=()=>rej(rq.error);});}
 
-/* ---------------- Catálogo ---------------- */
-let _lastCatRaw='';
-function procesarCatalogoDesdeTexto(text){
-  _lastCatRaw=text.replace(/\r/g,'');
-  const lines=_lastCatRaw.split('\n').filter(l=>l.trim());
-  if(!lines.length){ alert('Catálogo vacío.'); return; }
-  const header0=lines[0]; const delim=header0.includes('\t')?'\t':(header0.includes(';')?';':',');
-  const headers=header0.split(delim).map(h=>norm(h.replace(/^"+|"+$/g,'')));
-  const H=headers.map(h=>canon(h));
-  const idx={ BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1 };
+/* --------- Estado --------- */
+const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
+function refreshUI(){ setText('masterStatus', `${state.catalog.size} códigos en catálogo.`); setHTML('existenciaPreview',renderTable(state.existencia)); setText('existenciaCSVStatus',`${state.existencia.size||0} claves.`); setText('existenciaStatus',`${state.existencia.size||0} claves.`); }
+
+/* --------- Catálogo: parse CSV --------- */
+function splitCSVLine(line,delim){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch=='"'){if(q&&line[i+1]=='"'){cur+='"';i++;}else q=!q;}else if(ch===delim && !q){out.push(cur);cur='';}else{cur+=ch;}}out.push(cur);return out;}
+function parseCatalogCSV(text){
+  const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length) throw new Error('Catálogo vacío');
+  const header=lines[0]; const delim = header.includes('\t')?'\t':(header.includes(';')?';':',');
+  const cols=splitCSVLine(header,delim).map(h=>norm(h.replace(/^"+|"+$/g,''))); const H=cols.map(c=>canon(c));
+  const idx={BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1};
   const wants={BC:['CODIGO BARRA','CODIGO DE BARRAS','EAN','UPC','CODIGO','BARCODE'], MOD:['MOD','MODELO','SKU','REFERENCIA','REF'], COLOR:['COLOR','COL'], TALLA:['TALLA','SIZE','NUMERO'], TEMP:['TEMPORADA','TEMP','SEASON']};
-  for(const [k,arr] of Object.entries(wants)){ for(const a of arr){ const pos=H.indexOf(a); if(pos!==-1){ idx[k]=pos; break; } } }
-  if(idx.BC===-1){ setText('catalogoStatus','No se detectó CÓDIGO DE BARRAS.'); return; }
+  for(const [k,arr] of Object.entries(wants)){ for(const a of arr){const p=H.indexOf(a); if(p!==-1){idx[k]=p;break;}}}
+  if(idx.BC===-1) throw new Error('No se detectó columna de CÓDIGO DE BARRAS en el CSV embebido');
 
   state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
   let ok=0; const samples=[];
   for(let i=1;i<lines.length;i++){
     if(!lines[i].trim()) continue;
-    const cols=lines[i].split(delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
-    const safe=j=>(j>=0&&j<cols.length)?cols[j]:'';
+    const c=splitCSVLine(lines[i],delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
+    const safe=j=>(j>=0&&j<c.length)?c[j]:'';
     const bc=safe(idx.BC); if(!bc) continue;
     const MOD=safe(idx.MOD), COLOR=safe(idx.COLOR), TALLA=safe(idx.TALLA), TEMP=safe(idx.TEMP);
     state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
@@ -185,19 +196,38 @@ function procesarCatalogoDesdeTexto(text){
     if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
     ok++; if(samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
   }
-  localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}));
-  setText('catalogoStatus', `${ok} registros cargados.`); setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`);
+  setHTML('catalogFirstRows',`Primeras filas:<br>- ${samples.join('<br>- ')}`);
+}
+
+/* --------- Carga MAESTRO: embebido + IDB --------- */
+async function cargarMaestroEmbebido(force=false){
+  // 1) si ya existe en IDB y no estamos forzando, úsalo
+  if(!force){
+    const data=await idbGet('master');
+    if(data){
+      state.catalog=new Map(data.catalog||[]);
+      state.indexByKey=new Map(data.indexByKey||[]);
+      state.keyMeta=new Map(data.keyMeta||[]);
+      setText('masterStatus',`MAESTRO (IDB): ${state.catalog.size} códigos.`);
+      refreshUI(); return;
+    }
+  }
+  // 2) bajar del propio sitio (precacheado por el SW)
+  setText('masterStatus','Leyendo CSV embebido…');
+  const res=await fetch('./static/catalogo-master.csv', {cache:'no-store'});
+  if(!res.ok) throw new Error('No se pudo leer static/catalogo-master.csv');
+  const txt=await res.text();
+  parseCatalogCSV(txt);
+  await idbSet('master', {ts:Date.now(), catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]});
+  setText('masterStatus',`MAESTRO cargado desde CSV y guardado (IDB). Registros: ${state.catalog.size}`);
   refreshUI();
 }
-el('fileCatalogo')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); procesarCatalogoDesdeTexto(t); });
-el('btnFijarCatalogo')?.addEventListener('click',()=>{ if(!state.catalog.size) return alert('Carga el catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); alert('Guardado local.'); });
-el('btnUsarCatalogoGuardado')?.addEventListener('click',()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo local.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); refreshUI(); });
-el('btnBorrarCatalogo')?.addEventListener('click',()=>{ localStorage.removeItem('catalogo_fixed_v1'); refreshUI(); });
 
-/* ---------------- Existencia ---------------- */
+/* --------- Existencia --------- */
+function detectDelim(first){return first.includes('\t')?'\t':(first.includes(';')?';':',');}
 function parseExistenciaCSV(text){
   const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Archivo de existencia vacío.'); return; }
-  const first=lines[0]; const delim=first.includes('\t')?'\t':(first.includes(';')?';':',');
+  const first=lines[0]; const delim=detectDelim(first);
   const cols0=first.split(delim).map(x=>norm(x).toUpperCase());
   const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>cols0.includes(h));
   let startIndex=0, idxMap=null;
@@ -230,20 +260,16 @@ function parseExistenciaCSV(text){
     if(!state.keyMeta.has(key)){ const [M,C,T]=key.split('|'); state.keyMeta.set(key,{MOD:M,COLOR:C,TALLA:T,TEMPORADA:''}); }
     ok++;
   }
-  state.existencia=acc;
-  setText('existenciaCSVStatus',`${ok} registros. Omitidos: ${skip}`);
-  setText('existenciaStatus',`${acc.size} claves.`);
-  setHTML('existenciaPreview',renderTable(acc));
+  state.existencia=acc; setText('existenciaCSVStatus',`${ok} registros. Omitidos: ${skip}`); setText('existenciaStatus',`${acc.size} claves.`); setHTML('existenciaPreview',renderTable(acc));
   refreshUI();
 }
 el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); parseExistenciaCSV(t); });
 el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto.'); return;} parseExistenciaCSV(raw); });
 el('btnLimpiarExistencia')?.addEventListener('click',()=>{ el('existenciaInput').value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
-/* ---------------- Firebase (CDN v12) ---------------- */
+/* --------- FOLIO (solo existencia en nube) --------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
@@ -256,16 +282,13 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
 const setStatus = t => setText('folioStatus', t);
 
-/* ---------------- Folio ---------------- */
-const selAlmacen = el('selAlmacen'); const folioInput = el('folioInput');
+const selAlmacen=el('selAlmacen'); const folioInput=el('folioInput');
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 function generarFolio(){ const d=new Date(); const mes=MES_ABR[d.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const key=`seq_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}_${alm}`; const n=(+localStorage.getItem(key)||0)+1; localStorage.setItem(key,String(n)); return `${mes}${alm}${String(n).padStart(5,'0')}`;}
 el('btnGenerarFolio')?.addEventListener('click',()=>{ const f=generarFolio(); folioInput.value=f; setStatus(`Folio: ${f}`); });
 
-/* --- Publicar existencia (Firestore por lotes) --- */
 async function publicarCiclico(folio, existenciaMap){
   await setDoc(doc(db,'ciclicos',folio), { folio, almacen: selAlmacen?.value||'GLOBAL', actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge:true });
   if(!existenciaMap || !existenciaMap.size) return;
@@ -287,117 +310,38 @@ async function cargarExistenciaNube(folio){
   setText('existenciaCSVStatus',`${acc.size} claves (nube)`); setText('existenciaStatus',`${acc.size} claves (nube)`); refreshUI();
 }
 
-/* --- Storage: subir catálogo CSV y guardar URL --- */
-function catalogoCSV(){
-  const rows=['bc,MOD,COLOR,TALLA,TEMPORADA'];
-  for(const [bc,meta] of state.catalog.entries()){
-    const esc=s=>String(s??'').replaceAll('"','""');
-    rows.push(`"${esc(bc)}","${esc(meta.MOD)}","${esc(meta.COLOR)}","${esc(meta.TALLA)}","${esc(meta.TEMPORADA)}"`);
-  }
-  return rows.join('\n');
-}
-async function subirCatalogoStorage(folio){
-  if(!state.catalog.size) return alert('Primero carga el catálogo.');
-  const csv=catalogoCSV(); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const r=ref(storage, `catalogos/${folio}.csv`);
-  const task=uploadBytesResumable(r, blob, { contentType:'text/csv;charset=utf-8' });
-  task.on('state_changed',
-    s=>{ const pct=Math.round(100*s.bytesTransferred/s.totalBytes); setStatus(`Subiendo a Storage… ${pct}%`); },
-    e=>{ alert('❌ Error subiendo: '+(e?.message||e)); setStatus('❌ Error subiendo catálogo.'); },
-    async()=>{ const url=await getDownloadURL(task.snapshot.ref); await setDoc(doc(db,'ciclicos',folio),{catalogUrl:url, actualizado:serverTimestamp()},{merge:true}); setStatus('✅ Catálogo subido y URL guardada.'); alert('✅ Catálogo listo en Storage.'); }
-  );
-}
-
-/* --- Cargar catálogo con CORS + debug --- */
-async function cargarCatalogoStorage(folio){
-  setStatus('Buscando catálogo en Storage…');
-  const path = `catalogos/${folio}.csv`;
-
-  // helper p/descargar con diagnóstico
-  const baja = async (url) => {
-    console.log('[Catalog URL]', url);
-    const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
-    if (!res.ok) {
-      const txt = await res.text().catch(()=>'(sin cuerpo)');
-      throw new Error(`HTTP ${res.status} ${res.statusText} — ${txt.slice(0,200)}`);
-    }
-    return res.text();
-  };
-
-  try {
-    // 1) URL fresca desde Storage (evita URL vieja)
-    const url1 = await getDownloadURL(ref(storage, path));
-    try {
-      const txt = await baja(url1);
-      procesarCatalogoDesdeTexto(txt);
-      await setDoc(doc(db,'ciclicos',folio), { catalogUrl: url1 }, { merge:true });
-      setStatus(`Catálogo cargado: ${state.catalog.size} códigos.`);
-      return;
-    } catch (e1) {
-      console.warn('Fallo URL fresca', e1);
-      // 2) Reintento: delay breve (propagación de permisos/archivo grande)
-      await sleep(1000);
-      const url2 = await getDownloadURL(ref(storage, path));
-      try {
-        const txt = await baja(url2);
-        procesarCatalogoDesdeTexto(txt);
-        await setDoc(doc(db,'ciclicos',folio), { catalogUrl: url2 }, { merge:true });
-        setStatus(`Catálogo cargado (2º intento): ${state.catalog.size} códigos.`);
-        return;
-      } catch (e2) {
-        console.warn('Fallo 2º intento', e2);
-        // 3) Fallback: usa catalogUrl guardado en Firestore
-        const d = await getDoc(doc(db,'ciclicos',folio));
-        const saved = d.exists() ? d.data()?.catalogUrl : '';
-        if (!saved) throw e2;
-        const txt = await baja(saved);
-        procesarCatalogoDesdeTexto(txt);
-        setStatus(`Catálogo cargado (guardado): ${state.catalog.size} códigos.`);
-        return;
-      }
-    }
-  } catch (err) {
-    setStatus('❌ Error cargando catálogo');
-    alert('Error al cargar catálogo: ' + (err.message || err));
-    // Abre la URL real para ver 403/404 en el navegador
-    try {
-      const urlDebug = await getDownloadURL(ref(storage, path));
-      if (confirm('¿Abrir URL del catálogo para diagnosticar?')) window.open(urlDebug, '_blank');
-    } catch {}
-    throw err;
-  }
-}
-
-/* --- Botones --- */
+/* --------- Botones folio --------- */
 el('btnPublicarFolio')?.addEventListener('click', async()=>{
   const folio=(folioInput?.value||'').trim() || generarFolio(); folioInput.value=folio;
+  if(!state.existencia.size) return alert('No hay existencia para publicar.');
   try{ setStatus('Publicando…'); await publicarCiclico(folio, state.existencia); setStatus(`✅ Publicado: ${folio}`); alert('✅ Publicado'); }
   catch(e){ setStatus('❌ Error publicando: '+(e?.message||e)); alert('❌ Error publicando: '+(e?.message||e)); }
 });
 el('btnCargarFolio')?.addEventListener('click', async()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  try{ await cargarCatalogoStorage(folio); await cargarExistenciaNube(folio); alert('Folio cargado.'); }catch{}
+  try{ await cargarExistenciaNube(folio); setStatus('✅ Existencia cargada.'); alert('Folio cargado (existencia).'); }catch(e){ setStatus('❌ Error: '+(e?.message||e)); alert('❌ Error: '+(e?.message||e)); }
 });
-el('btnActualizarExistencia')?.addEventListener('click', async()=>{
+el('btnVerificar')?.addEventListener('click', async()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  if(!state.existencia.size) return alert('No hay existencia en pantalla.'); await publicarCiclico(folio, state.existencia); alert('Existencia actualizada.');
-});
-el('btnSubirCatalogoStorage')?.addEventListener('click', async()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.'); await subirCatalogoStorage(folio);
+  const snap=await getDocs(collection(db,`ciclicos/${folio}/existencia`));
+  setStatus(`Nube: ${snap.size} claves.`); alert(`Nube: ${snap.size} claves.`);
 });
 
-/* ---------------- Reporte / Historial ---------------- */
+/* --------- Reporte / Historial --------- */
 function computeReport(){ const esc=group(state.scans), exi=state.existencia, sob=new Map(), fal=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); keys.forEach(k=>{ const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sob.set(k,e-x); if(x-e>0) fal.set(k,x-e); }); return {escT,sob,falt:fal}; }
 el('btnGenerarReporte')?.addEventListener('click',()=>{ const {escT,sob,falt}=computeReport(); setHTML('tablaEscaneados',renderTable(escT)); setHTML('tablaSobrantes',renderTable(sob)); setHTML('tablaFaltantes',renderTable(falt)); });
 el('btnExportarCSV')?.addEventListener('click',()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(n,m)=>{ for(const [k,v] of m) csv+=`${n},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
 
-function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); setHTML('histList',html.join('')); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#reporte'; })); }
-function saveHist(nombre='Cíclico'){ const hist=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const payload={ts:Date.now(), nombre, scans:[...state.scans], existencia:Object.fromEntries(state.existencia), catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}; hist.unshift(payload); localStorage.setItem('conteo_cklass_hist', JSON.stringify(hist.slice(0,50))); renderHist(); alert('Histórico guardado.'); }
+/* --------- Botones catálogo embebido --------- */
+el('btnForzarLeerCSV')?.addEventListener('click',()=>cargarMaestroEmbebido(true));
+el('btnMostrarResumen')?.addEventListener('click',()=>alert(`Catálogo: ${state.catalog.size} códigos · Claves: ${state.indexByKey.size}`));
+el('btnBorrarMaestro')?.addEventListener('click',async()=>{await idbSet('master',null); state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear(); setText('masterStatus','MAESTRO borrado. Pulsa “Forzar lectura” para recargar del CSV.'); refreshUI();});
 
+/* --------- Arranque --------- */
 addEventListener('DOMContentLoaded', async()=>{
-  try{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(raw){ const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); } }catch{}
-  refreshUI(); renderHist();
-  const f=new URLSearchParams(location.search).get('folio'); if(f){ folioInput.value=f.toUpperCase(); try{ await cargarCatalogoStorage(f.toUpperCase()); await cargarExistenciaNube(f.toUpperCase()); }catch{} }
+  try{ await cargarMaestroEmbebido(false); }catch(e){ setText('masterStatus','❌ Error cargando MAESTRO: '+(e?.message||e)); }
+  refreshUI();
+  const f=new URLSearchParams(location.search).get('folio'); if(f){ folioInput.value=f.toUpperCase(); try{ await cargarExistenciaNube(f.toUpperCase()); }catch{} }
 });
 </script>
 </body>
