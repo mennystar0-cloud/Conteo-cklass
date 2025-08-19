@@ -1,63 +1,379 @@
-// service-worker.js — Conteo Cklass (validado)
-const CACHE = 'cklass-conteo-v3';
-const SHELL_ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-];
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Conteo Cíclico CKLASS</title>
+  <meta name="theme-color" content="#1877F2" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
+    .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
+    .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
+    .cam{height:45vh;max-height:420px;background:#000;border-radius:1rem;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover}
+    #overlay{position:absolute;inset:0;pointer-events:none}
+    @media print {.no-print{display:none!important}}
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+<div class="max-w-7xl mx-auto p-4">
+  <header class="mb-4 no-print">
+    <h1 class="text-2xl font-bold">Conteo Cíclico — Catálogo en Firebase Storage</h1>
+    <p class="text-sm text-gray-600">Catálogo se descarga 1 vez (IndexedDB). Existencia por folio (Firestore). Escaneo con cámara o manual.</p>
+  </header>
 
-function isFirebaseCatalogUrl(url) {
-  try {
-    const u = new URL(url);
-    const isFB = u.hostname.includes('firebasestorage.googleapis.com');
-    const decoded = decodeURIComponent(u.pathname);
-    // ✔️ coincide con /o/static/ del objeto catalogo-master.csv
-    return isFB && decoded.includes('/o/static/');
-  } catch {
-    return false;
+  <!-- Tabs -->
+  <div class="border-b border-gray-200 mb-4 no-print">
+    <nav class="-mb-px flex gap-2" id="tabs">
+      <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
+      <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
+      <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Reporte</button>
+      <button data-tab="historial" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">4) Historial</button>
+    </nav>
+  </div>
+
+  <!-- Importar -->
+  <section id="tab-importar" class="tab-pane block">
+    <div class="grid md:grid-cols-2 gap-4">
+      <!-- Catálogo -->
+      <div class="card">
+        <h2 class="font-semibold mb-2">Catálogo maestro (Firebase Storage)</h2>
+        <p class="text-xs text-gray-600 mb-2">
+          Debe estar en <code>static/catalogo-master.csv</code>. Encabezados esperados: <b>CÓDIGO DE BARRAS / EAN / UPC</b>, <b>MOD</b>, <b>COLOR</b>, <b>TALLA</b>, <i>TEMPORADA</i>.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnRecargarCloud" class="btn bg-blue-600 text-white">Recargar desde Storage</button>
+          <button id="btnResumenCat" class="btn bg-gray-100">Resumen</button>
+          <button id="btnBorrarCat" class="btn bg-red-600 text-white">Borrar caché local</button>
+        </div>
+        <div id="masterStatus" class="text-xs text-gray-600 mt-2">—</div>
+        <details class="mt-3">
+          <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
+          <div class="text-xs mt-2" id="catalogDiag">—</div>
+          <div class="text-xs mt-2" id="catalogFirstRows">—</div>
+        </details>
+      </div>
+
+      <!-- Existencia -->
+      <div class="card">
+        <h2 class="font-semibold mb-2">Existencia física (CSV o pegado)</h2>
+        <p class="text-xs text-gray-600 mb-2">
+          Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> ·
+          <code>MOD,COLOR-TALLA[,CANT]</code> · o <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.
+        </p>
+        <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
+        <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
+        <div class="bg-gray-50 rounded-xl p-2 mt-3">
+          <label class="text-xs text-gray-600">Pegar existencia</label>
+          <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Ej: 000-24,NEGRO              220          4"></textarea>
+          <div class="flex gap-2 mt-2">
+            <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
+            <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
+          </div>
+          <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
+          <details class="mt-2"><summary class="text-sm font-medium">Diagnóstico existencia</summary><div class="text-xs mt-2" id="existDiag">—</div></details>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4">
+      <h3 class="font-semibold mb-2">Folio (Firestore)</h3>
+      <div class="grid md:grid-cols-4 gap-2">
+        <select id="selAlmacen" class="rounded-lg border border-gray-200 p-2 text-sm">
+          <option value="CAL">Calzado (CAL)</option>
+          <option value="MUL">Sport (MUL)</option>
+          <option value="ROP">Ropa (ROP)</option>
+          <option value="GLOBAL">General (GLOBAL)</option>
+        </select>
+        <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Vacío = generar automático" />
+        <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
+        <button id="btnPublicarFolio" class="btn bg-emerald-600 text-white">Publicar cíclico (existencia)</button>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (existencia)</button>
+        <button id="btnVerificar" class="btn bg-gray-100">Verificar publicación</button>
+      </div>
+      <p class="text-xs text-gray-600 mt-2">Puedes abrir con <code>?folio=TU-FOLIO</code>. El catálogo viene de Storage/IndexedDB.</p>
+      <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
+    </div>
+  </section>
+
+  <!-- Escanear -->
+  <section id="tab-escanear" class="tab-pane hidden">
+    <div class="card">
+      <h2 class="font-semibold mb-2">Escaneo con cámara</h2>
+      <div class="flex flex-wrap items-center gap-2 mb-2">
+        <select id="engineSelect" class="border rounded p-1 text-xs">
+          <option value="bd">BarcodeDetector</option>
+          <option value="quagga">Quagga2</option>
+        </select>
+        <button id="btnPermisos" class="btn bg-indigo-600 text-white">Permisos</button>
+        <button id="btnStart" class="btn bg-green-600 text-white">Iniciar</button>
+        <button id="btnStop" class="btn bg-gray-100">Detener</button>
+        <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
+        <label class="flex items-center gap-2 text-xs ml-2"><input id="chkBeep" type="checkbox" checked> Beep</label>
+      </div>
+      <div class="text-xs" id="httpsStatus"></div>
+      <div class="relative cam mt-2">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4 mt-4">
+        <div>
+          <h3 class="font-semibold mb-2">Entrada manual / lector</h3>
+          <input id="scanInput" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="Escanea o escribe código / MOD|COLOR|TALLA" />
+          <div class="flex gap-2">
+            <button id="btnUndo" class="btn bg-gray-100">Deshacer</button>
+            <button id="btnReset" class="btn bg-gray-100">Reiniciar</button>
+          </div>
+          <div class="mt-3 text-xs text-gray-500" id="diag"></div>
+        </div>
+        <div>
+          <h3 class="font-semibold mb-2">Acumulado por clave</h3>
+          <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
+          <h3 class="font-semibold mb-2 mt-3">Últimos escaneos</h3>
+          <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Reporte -->
+  <section id="tab-reporte" class="tab-pane hidden">
+    <div class="card">
+      <h2 class="font-semibold mb-2">Reporte rápido</h2>
+      <div class="flex gap-2 mb-3 no-print">
+        <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
+        <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
+      </div>
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="border rounded-xl p-3"><h3 class="font-semibold mb-2">Escaneados</h3><div id="tablaEscaneados" class="overflow-auto max-h-80"></div></div>
+        <div class="border rounded-xl p-3"><h3 class="font-semibold mb-2">Sobrantes</h3><div id="tablaSobrantes" class="overflow-auto max-h-80"></div></div>
+        <div class="border rounded-xl p-3"><h3 class="font-semibold mb-2">Faltantes</h3><div id="tablaFaltantes" class="overflow-auto max-h-80"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Historial -->
+  <section id="tab-historial" class="tab-pane hidden">
+    <div class="card">
+      <h2 class="font-semibold mb-3">Historial (local)</h2>
+      <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl p-2 text-sm text-gray-700">Próximamente.</div>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
+
+<script type="module">
+/* ========= TABS ========= */
+const $=s=>document.querySelector(s), el=id=>document.getElementById(id);
+(()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:el('tab-importar'),escanear:el('tab-escanear'),reporte:el('tab-reporte'),historial:el('tab-historial')};function act(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t)});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t)});location.hash='#'+t}tabs.forEach(btn=>btn.addEventListener('click',()=>act(btn.dataset.tab)));addEventListener('hashchange',()=>act((location.hash||'#importar').slice(1)));act((location.hash||'#importar').slice(1))})();
+
+/* ========= HELPERS ========= */
+const setText=(id,t)=>{const e=el(id); if(e) e.textContent=t;};
+const setHTML=(id,h)=>{const e=el(id); if(e) e.innerHTML=h;};
+const canon=s=>(s==null?'':String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+function renderTable(map){return `<table class="min-w-full text-sm table"><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('')}</tbody></table>`;}
+function group(list){const m=new Map();list.forEach(k=>m.set(k,(m.get(k)||0)+1));return m;}
+
+/* ========= IndexedDB (cache catálogo) ========= */
+const IDB_DB='cklass_conteo_db', STORE='master_catalog_v1';
+function idbOpen(){return new Promise((res,rej)=>{const rq=indexedDB.open(IDB_DB,1);rq.onupgradeneeded=()=>rq.result.createObjectStore(STORE);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function idbGet(k){const db=await idbOpen();return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readonly');const st=tx.objectStore(STORE);const rq=st.get(k);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+async function idbSet(k,v){const db=await idbOpen();return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');const st=tx.objectStore(STORE);const rq=st.put(v,k);rq.onsuccess=()=>res();rq.onerror=()=>rej(rq.error);});}
+
+/* ========= Firebase ========= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+import { getStorage, ref, getBytes } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
+  authDomain: "cklass-conteo.firebaseapp.com",
+  projectId: "cklass-conteo",
+  storageBucket: "cklass-conteo.appspot.com",  // ✅ CORREGIDO
+  messagingSenderId: "695313165938",
+  appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
+  measurementId: "G-45LC81EE44"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+const storage = getStorage(app);
+const auth = getAuth(app);
+
+// ✅ Login anónimo (necesario para Rules seguras)
+signInAnonymously(auth).catch(e=>console.error('Auth anon error:', e));
+
+/* ========= Catálogo (Storage → getBytes) ========= */
+const STORAGE_CATALOG_PATH = "static/catalogo-master.csv";
+
+function detectDelim(line){ if(line.includes('\t')) return '\t'; const c=(line.match(/,/g)||[]).length, s=(line.match(/;/g)||[]).length; return s>c?';':','; }
+function splitCSV(line,d){ const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch=='"'){ if(q&&line[i+1]=='"'){cur+='"';i++;}else q=!q; } else if(ch===d && !q){out.push(cur);cur='';} else cur+=ch;} out.push(cur); return out; }
+
+const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
+
+function parseCatalogCSV(text){
+  const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length) throw new Error('Catálogo vacío');
+  const delim=detectDelim(lines[0]); const H=splitCSV(lines[0],delim).map(h=>canon(h));
+  const want={BC:['CODIGO DE BARRAS','CODIGO BARRA','EAN','UPC','BARCODE','CODIGO'], MOD:['MOD','MODELO','SKU'], COLOR:['COLOR','COL'], TALLA:['TALLA','SIZE','NUMERO'], TEMP:['TEMPORADA','TEMP']};
+  const idx={BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1};
+  for(const [k,arr] of Object.entries(want)){ for(const a of arr){ const p=H.indexOf(a); if(p!==-1){ idx[k]=p; break; } } }
+  if(idx.BC===-1) throw new Error('No se detectó columna de CÓDIGO DE BARRAS.');
+  state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
+  let ok=0; const samples=[];
+  for(let i=1;i<lines.length;i++){
+    const c=splitCSV(lines[i],delim).map(v=>String(v||'').trim());
+    const bc=c[idx.BC]; if(!bc) continue;
+    const MOD=idx.MOD>=0?c[idx.MOD]:'', COLOR=idx.COLOR>=0?c[idx.COLOR]:'', TALLA=idx.TALLA>=0?c[idx.TALLA]:'', TEMP=idx.TEMP>=0?c[idx.TEMP]:'';
+    state.catalog.set(bc,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+    const key=`${canon(MOD)}|${canon(COLOR)}|${canon(TALLA)}`;
+    if(!state.indexByKey.has(key)) state.indexByKey.set(key,[]);
+    state.indexByKey.get(key).push(bc);
+    if(!state.keyMeta.has(key)) state.keyMeta.set(key,{MOD,COLOR,TALLA,TEMPORADA:TEMP});
+    if(samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
+    ok++;
   }
+  setText('masterStatus',`Catálogo: ${ok} códigos.`); setHTML('catalogFirstRows', samples.length?`Primeras filas:<br>- ${samples.join('<br>- ')}`:'—');
 }
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL_ASSETS)));
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (e) => {
-  const { request } = e;
-  if (request.method !== 'GET') return;
-
-  // ✔️ Catálogo en Storage: network-first
-  if (isFirebaseCatalogUrl(request.url)) {
-    e.respondWith(
-      fetch(request)
-        .then(resp => {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(request, clone));
-          return resp;
-        })
-        .catch(() => caches.match(request))
-    );
-    return;
+async function cargarCatalogoStorage(show=true){
+  try{
+    setText('masterStatus','Descargando catálogo de Storage…');
+    const r = ref(storage, STORAGE_CATALOG_PATH);
+    const bytes = await getBytes(r);
+    const text  = new TextDecoder('utf-8').decode(bytes);
+    parseCatalogCSV(text);
+    await idbSet('master',{catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], ts:Date.now()});
+    setHTML('catalogDiag',`OK · Registros: ${state.catalog.size}`);
+    setText('masterStatus',`MAESTRO (Storage): ${state.catalog.size} códigos (cache actualizado)`);
+    if(show) alert('Catálogo actualizado desde Storage.');
+  }catch(e){
+    const msg = e?.message || e?.code || String(e);
+    setText('masterStatus','❌ Error cargando catálogo: '+ msg);
+    alert('❌ Error cargando catálogo: ' + msg);
   }
+}
+async function cargarCatalogoCache(){
+  const data=await idbGet('master');
+  if(data){ state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); setText('masterStatus',`MAESTRO (cache): ${state.catalog.size} códigos.`); return true; }
+  return false;
+}
+el('btnRecargarCloud').addEventListener('click',()=>cargarCatalogoStorage(true));
+el('btnResumenCat').addEventListener('click',()=>alert(`Catálogo: ${state.catalog.size} · Claves: ${state.indexByKey.size}`));
+el('btnBorrarCat').addEventListener('click',async()=>{ await idbSet('master',null); state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear(); setText('masterStatus','Caché borrada. Pulsa "Recargar desde Storage".'); });
 
-  // ✔️ Shell: cache-first
-  e.respondWith(
-    caches.match(request).then(cached => cached || fetch(request))
-  );
+/* ========= Existencia (igual que tenías) ========= */
+function parseExistenciaCSV(text){
+  const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Existencia vacía.'); return; }
+  const delim=detectDelim(lines[0]); const cols0=splitCSV(lines[0],delim).map(x=>String(x).trim().toUpperCase());
+  const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>cols0.includes(h));
+  let start=0, idx=null;
+  if(hasHeader){
+    const pos = arr => { for(const a of arr){ const i=cols0.indexOf(a); if(i!==-1) return i;} return -1; };
+    idx={ KEY:pos(['CODIGO-COLOR-TALLA','CLAVE','KEY']), MOD:pos(['MOD','MODELO','SKU']), COLOR:pos(['COLOR','COL']), TALLA:pos(['TALLA','SIZE','NUMERO']), CANT:pos(['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']) };
+    start=1;
+  }
+  const acc=new Map(); let ok=0, skip=0;
+  for(let i=start;i<lines.length;i++){
+    const line=lines[i]; let key='', qty=1;
+    if(hasHeader){
+      const p=splitCSV(line,delim).map(v=>String(v||'').trim()); const s=j=>(j>=0&&j<p.length)?p[j]:'';
+      if(idx.MOD>=0&&idx.COLOR>=0&&idx.TALLA>=0) key=`${canon(s(idx.MOD))}|${canon(s(idx.COLOR))}|${canon(s(idx.TALLA))}`;
+      else if(idx.KEY>=0&&s(idx.KEY)){
+        const kd=s(idx.KEY);
+        if(kd.includes('|')){ const [m,c,t]=kd.split('|').map(canon); key=`${m}|${c}|${t}`; }
+        else if(kd.includes(',')){ const [m,tail]=kd.split(','); const [c,t]=(tail||'').split('-'); key=`${canon(m)}|${canon(c)}|${canon(t)}`; }
+        else if(kd.includes('-')){ const [m,c,t]=kd.split('-').map(canon); key=`${m}|${c}|${t}`; }
+      }
+      if(idx.CANT>=0){ const n=parseInt((s(idx.CANT)||'').replace(/\./g,'').replace(',',''),10); qty=Number.isFinite(n)&&n>0?n:1; }
+    } else {
+      let l=line.replace(/\u00A0/g,' ').trim(); l=l.replace(/\s{2,}/g,' '); l=l.replace(/\s*-\s*/g,'-');
+      let m=l.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4],10)||1; }
+      if(!key){ m=l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
+      if(!key){ m=l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
+    }
+    if(!key){ skip++; continue; }
+    acc.set(key,(acc.get(key)||0)+qty);
+    if(!state.keyMeta.has(key)){ const [M,C,T]=key.split('|'); state.keyMeta.set(key,{MOD:M,COLOR:C,TALLA:T,TEMPORADA:''}); }
+    ok++;
+  }
+  state.existencia=acc; setText('existenciaCSVStatus',`${ok} registros. Omitidos: ${skip}`); setText('existenciaStatus',`${acc.size} claves.`); setHTML('existenciaPreview',renderTable(acc));
+}
+el('fileExistenciaCSV').addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; parseExistenciaCSV(await f.text()); });
+el('btnProcesarExistencia').addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto.'); return;} parseExistenciaCSV(raw); });
+el('btnLimpiarExistencia').addEventListener('click',()=>{ el('existenciaInput').value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); });
+
+/* ========= Folio (Firestore) ========= */
+const setStatus=t=>setText('folioStatus',t);
+const selAlmacen=el('selAlmacen'), folioInput=el('folioInput');
+const MES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+function generarFolio(){ const d=new Date(); const m=MES[d.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const key=`seq_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}_${alm}`; const n=(+localStorage.getItem(key)||0)+1; localStorage.setItem(key,String(n)); return `${m}${alm}${String(n).padStart(5,'0')}`;}
+el('btnGenerarFolio').addEventListener('click',()=>{ const f=generarFolio(); folioInput.value=f; setStatus(`Folio: ${f}`); });
+
+async function publicarCiclico(folio, existencia){
+  await setDoc(doc(db,'ciclicos',folio), { folio, almacen: selAlmacen?.value||'GLOBAL', ts: serverTimestamp() }, { merge:true });
+  if(!existencia?.size) return;
+  const entries=[...existencia.entries()]; const CHUNK=450; let done=0;
+  for(let i=0;i<entries.length;i+=CHUNK){
+    const slice=entries.slice(i,i+CHUNK); const batch=writeBatch(db); const col=collection(db,`ciclicos/${folio}/existencia`);
+    for(const [clave,qty] of slice) batch.set(doc(col,clave),{clave,qty});
+    setStatus(`Subiendo… ${done}/${entries.length} (lote ${Math.floor(i/CHUNK)+1})`);
+    await batch.commit(); done+=slice.length;
+  }
+  setStatus(`✅ Existencia publicada: ${done} claves`);
+}
+async function cargarExistenciaNube(folio){
+  setStatus('Cargando existencia…');
+  const snap=await getDocs(collection(db,`ciclicos/${folio}/existencia`));
+  const map=new Map(); snap.forEach(d=>{ const {clave,qty}=d.data(); if(clave) map.set(clave,qty||0); });
+  state.existencia=map; setHTML('existenciaPreview',renderTable(map));
+  setText('existenciaCSVStatus',`${map.size} claves (nube)`); setText('existenciaStatus',`${map.size} claves (nube)`); setStatus('✅ Cargado');
+}
+el('btnPublicarFolio').addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim() || generarFolio(); folioInput.value=folio;
+  if(!state.existencia.size) return alert('No hay existencia para publicar.');
+  try{ await publicarCiclico(folio,state.existencia); alert('✅ Publicado'); }catch(e){ alert('❌ Error publicando: '+(e?.message||e)); }
+});
+el('btnCargarFolio').addEventListener('click', async()=>{
+  const f=(folioInput?.value||'').trim(); if(!f) return alert('Escribe/genera folio.');
+  try{ await cargarExistenciaNube(f); }catch(e){ alert('❌ '+(e?.message||e)); }
+});
+el('btnVerificar').addEventListener('click', async()=>{
+  const f=(folioInput?.value||'').trim(); if(!f) return alert('Escribe/genera folio.');
+  const s=await getDocs(collection(db,`ciclicos/${f}/existencia`)); alert(`Nube: ${s.size} claves.`);
 });
 
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+/* ========= Escáner ========= */
+const video=el('video'), overlay=el('overlay'), scanLog=el('scanLog'), scanGrouped=el('scanGrouped');
+const chkAuto=el('chkAuto'), chkBeep=el('chkBeep'), engineSelect=el('engineSelect');
+let stream=null, bdDetector=null, lastCode='', lastTime=0, quaggaOn=false;
+const beepOk=new Audio('data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA'); // beep simple
+
+function addScan(code){ const now=Date.now(); if(code===lastCode && (now-lastTime)<900) return; lastCode=code; lastTime=now; state.scans.push(code); state.groupedScans=group(state.scans); scanLog.innerHTML='<ul>'+state.scans.slice(-20).map(x=>`<li>${x}</li>`).join('')+'</ul>'; scanGrouped.innerHTML=renderTable(state.groupedScans); if(chkBeep.checked) beepOk.play().catch(()=>{}); }
+async function startCam(){ stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); video.srcObject=stream; await video.play(); }
+function stopCam(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } if(quaggaOn){ Quagga.stop(); quaggaOn=false; } }
+async function runBD(){ if(!('BarcodeDetector' in window)) throw new Error('No soportado'); bdDetector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e'] }); const loop=async()=>{ if(!stream) return; try{ const codes=await bdDetector.detect(video); if(codes?.length){ const v=codes[0].rawValue?.trim(); if(v) addScan(v); } }catch{} requestAnimationFrame(loop); }; loop(); }
+function runQuagga(){ if(quaggaOn) return; quaggaOn=true; const conf={inputStream:{type:'LiveStream',target:video,constraints:{facingMode:'environment'}},locator:{patchSize:'medium',halfSample:true},numOfWorkers:2,decoder:{readers:['ean_reader','ean_8_reader','code_128_reader','code_39_reader','upc_reader','upc_e_reader']},locate:true}; Quagga.init(conf, err=>{ if(err){quaggaOn=false; alert('Quagga error: '+err); return;} Quagga.start(); }); Quagga.onDetected(res=>{ const val=res?.codeResult?.code; if(val) addScan(String(val)); }); }
+
+el('btnPermisos').addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); alert('Permisos OK. Usa HTTPS.'); } catch{ alert('No se pudieron solicitar permisos.'); } });
+el('btnStart').addEventListener('click', async()=>{ try{ await startCam(); if(engineSelect.value==='bd') await runBD(); else runQuagga(); setText('httpsStatus','Cámara activa.'); }catch(e){ alert('No se pudo iniciar cámara: '+(e?.message||e)); } });
+el('btnStop').addEventListener('click',()=>{ stopCam(); setText('httpsStatus','Cámara detenida.'); });
+el('scanInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); e.target.value=''; if(!v) return; addScan(v); } });
+el('btnUndo').addEventListener('click',()=>{ state.scans.pop(); state.groupedScans=group(state.scans); scanGrouped.innerHTML=renderTable(state.groupedScans); scanLog.innerHTML='<ul>'+state.scans.slice(-20).map(x=>`<li>${x}</li>`).join('')+'</ul>'; });
+el('btnReset').addEventListener('click',()=>{ state.scans=[]; state.groupedScans=new Map(); scanGrouped.innerHTML=''; scanLog.innerHTML=''; });
+
+/* ========= Arranque ========= */
+addEventListener('DOMContentLoaded', async()=>{
+  const had = await cargarCatalogoCache();
+  if(!had) await cargarCatalogoStorage(false); // primera vez
+  const params=new URLSearchParams(location.search); if(params.has('folio')){ el('folioInput').value=params.get('folio'); try{ await cargarExistenciaNube(params.get('folio')); }catch{} }
 });
+</script>
+</body>
+</html>
