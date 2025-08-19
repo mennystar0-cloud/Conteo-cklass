@@ -3,43 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo CKLASS – Cíclicos (Storage+Firestore)</title>
+  <title>Conteo CKLASS – Catálogo en Storage + Existencia en Firestore</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
   <script>
-    // SW con bust de caché
     if ("serviceWorker" in navigator) {
-      addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=5").catch(()=>{});
-      });
+      addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js?v=6").catch(()=>{}));
     }
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    video{object-fit:cover}
-    @media print{.no-print{display:none!important}}
+    @media print {.no-print{display:none!important}}
     .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
     .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
     .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
-    .cam-compact{height:45vh;max-height:420px}
     details>summary{cursor:pointer;user-select:none}
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
-    <h1 class="text-2xl font-bold">Módulo de Conteo – Catálogo en Storage + Existencia en Firestore</h1>
-    <p class="text-sm text-gray-600">1) Importar catálogo · 2) Subir a Storage · 3) Cargar/pegar existencia · 4) Publicar cíclico · 5) Cargar en celulares con <code>?folio=</code>.</p>
+    <h1 class="text-2xl font-bold">Módulo de Conteo – Storage + Firestore</h1>
+    <p class="text-sm text-gray-600">1) Catálogo → 2) Existencia → 3) Publicar cíclico → 4) Cargar en celulares con <code>?folio=</code>.</p>
   </header>
 
   <!-- Tabs -->
   <div class="border-b border-gray-200 mb-4 no-print">
     <nav class="-mb-px flex gap-2" id="tabs">
       <button data-tab="importar" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Importar</button>
-      <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
-      <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Reporte</button>
-      <button data-tab="historial" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">4) Historial</button>
+      <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Reporte</button>
+      <button data-tab="historial" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Historial</button>
     </nav>
   </div>
 
@@ -49,33 +43,18 @@
       <!-- Catálogo -->
       <div class="card">
         <h2 class="font-semibold mb-2">Catálogo maestro (CSV)</h2>
-        <p class="text-xs text-gray-600 mb-2">Encabezados sugeridos: <code>CÓDIGO DE BARRAS / EAN</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code>.</p>
+        <p class="text-xs text-gray-600 mb-2">Encabezados: <code>CÓDIGO DE BARRAS/EAN/UPC</code>, <code>MOD</code>, <code>COLOR</code>, <code>TALLA</code>, <code>TEMPORADA</code> (opcional).</p>
         <input id="fileCatalogo" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div class="flex gap-2 mt-2">
-          <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar guardado</button>
-          <button id="btnFijarCatalogo" class="btn bg-blue-600 text-white">Fijar predeterminado</button>
-          <button id="btnBorrarCatalogo" class="btn bg-red-600 text-white">Borrar</button>
+          <button id="btnFijarCatalogo" class="btn bg-blue-600 text-white">Guardar local</button>
+          <button id="btnUsarCatalogoGuardado" class="btn bg-emerald-600 text-white">Usar local</button>
+          <button id="btnBorrarCatalogo" class="btn bg-red-600 text-white">Borrar local</button>
         </div>
         <div id="catalogoStatus" class="text-xs text-gray-600 mt-2">Sin cargar.</div>
-        <div id="catalogoGuardadoStatus" class="text-xs text-gray-600 mt-1">—</div>
-
         <details class="mt-3">
-          <summary class="text-sm font-medium">Diagnóstico catálogo / Mapeo manual</summary>
+          <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
           <div class="text-xs mt-2" id="catalogDiag">—</div>
-          <div class="text-xs mt-2" id="catalogFirstRows"></div>
-          <div class="mt-3 p-2 bg-gray-50 rounded-lg">
-            <div class="text-[11px] mb-1">Si no detecta encabezados, mapea manualmente:</div>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="text-[11px]">Código<select id="mapBC" class="border rounded p-1 text-xs"></select></label>
-              <label class="text-[11px]">MOD<select id="mapMOD" class="border rounded p-1 text-xs"></select></label>
-              <label class="text-[11px]">COLOR<select id="mapCOLOR" class="border rounded p-1 text-xs"></select></label>
-              <label class="text-[11px]">TALLA<select id="mapTALLA" class="border rounded p-1 text-xs"></select></label>
-              <label class="text-[11px]">TEMP<select id="mapTEMP" class="border rounded p-1 text-xs"></select></label>
-            </div>
-            <div class="mt-2">
-              <button id="btnAplicarMapa" class="btn bg-gray-200">Aplicar mapeo manual</button>
-            </div>
-          </div>
+          <div class="text-xs mt-2" id="catalogFirstRows">—</div>
         </details>
       </div>
 
@@ -85,7 +64,6 @@
         <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code> · ó <code>000-24,NEGRO&nbsp;&nbsp;&nbsp;220&nbsp;&nbsp;&nbsp;4</code>.</p>
         <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
         <div id="existenciaCSVStatus" class="text-xs text-gray-600">Sin cargar.</div>
-
         <div class="bg-gray-50 rounded-xl p-2 mt-3">
           <label class="text-xs text-gray-600">Pegar existencia</label>
           <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm" placeholder="Ej: 000-24,NEGRO              220          4"></textarea>
@@ -94,10 +72,7 @@
             <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
           </div>
           <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 registros.</div>
-          <details class="mt-2">
-            <summary class="text-sm font-medium">Diagnóstico existencia</summary>
-            <div class="text-xs mt-2" id="existDiag">—</div>
-          </details>
+          <details class="mt-2"><summary class="text-sm font-medium">Diagnóstico existencia</summary><div class="text-xs mt-2" id="existDiag">—</div></details>
         </div>
       </div>
     </div>
@@ -124,48 +99,11 @@
       <div class="mt-2 flex flex-wrap gap-2">
         <button id="btnCargarFolio" class="btn bg-blue-600 text-white">Cargar folio (nube)</button>
         <button id="btnActualizarExistencia" class="btn bg-orange-500 text-white">Actualizar existencia</button>
-        <button id="btnVerificarFolio" class="btn bg-gray-200">Verificar publicación</button>
-        <!-- Storage -->
         <button id="btnSubirCatalogoStorage" class="btn bg-fuchsia-600 text-white">Subir catálogo (Storage)</button>
         <button id="btnCargarCatalogoStorage" class="btn bg-fuchsia-200">Cargar catálogo (Storage)</button>
       </div>
-      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code> para que el celular cargue catálogo (Storage) + existencia (Firestore).</p>
+      <p class="text-xs text-gray-600 mt-2">Comparte el link con <code>?folio=TU-FOLIO</code>.</p>
       <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
-    </div>
-  </section>
-
-  <!-- Escanear -->
-  <section id="tab-escanear" class="tab-pane hidden">
-    <div class="card">
-      <h2 class="font-semibold mb-2">Escaneo / Registro manual</h2>
-      <div id="quaggaArea" class="cam-compact rounded-xl border border-gray-200 overflow-hidden bg-black mb-3">
-        <video id="videoCam" class="w-full h-full" autoplay playsinline muted></video>
-      </div>
-      <div class="flex gap-2 mb-2">
-        <button id="btnPermisos" class="btn bg-indigo-600 text-white">Permisos</button>
-        <button id="btnCamStart" class="btn bg-green-600 text-white">Iniciar cámara</button>
-        <button id="btnCamStop" class="btn bg-gray-100">Detener</button>
-        <label class="flex items-center gap-2 text-xs ml-2"><input id="chkAuto" type="checkbox" checked> Auto-agregar</label>
-      </div>
-
-      <input id="scanInput" type="text" class="w-full rounded-xl border border-gray-200 p-3 my-3" placeholder="Escanea o escribe: 10902400 ó 000-01|ORO|240" />
-
-      <div class="grid md:grid-cols-3 gap-4">
-        <div>
-          <h3 class="font-semibold mb-2">Últimos escaneos</h3>
-          <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl"></div>
-        </div>
-        <div>
-          <h3 class="font-semibold mb-2">Acumulado por clave</h3>
-          <div id="scanGrouped" class="overflow-auto max-h-64 border rounded-xl"></div>
-        </div>
-        <div>
-          <h3 class="font-semibold mb-2">Acciones</h3>
-          <button id="btnGuardarHistorico" class="btn bg-emerald-600 text-white">Guardar histórico (local)</button>
-          <button id="btnNuevaSesion" class="btn bg-orange-500 text-white">Nueva sesión</button>
-          <div class="text-xs text-gray-600 mt-2" id="lastStatus">—</div>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -173,7 +111,7 @@
   <section id="tab-reporte" class="tab-pane hidden">
     <div class="card">
       <h2 class="font-semibold mb-2">Reporte (Escaneados vs Existencia)</h2>
-      <div class="flex flex-wrap gap-2 mb-3 no-print">
+      <div class="flex gap-2 mb-3 no-print">
         <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
         <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
       </div>
@@ -188,59 +126,55 @@
   <!-- Historial -->
   <section id="tab-historial" class="tab-pane hidden">
     <div class="card">
-      <h2 class="font-semibold mb-3">Historial de conteos (local)</h2>
+      <h2 class="font-semibold mb-3">Historial (local)</h2>
       <div id="histList" class="overflow-auto max-h-[70vh] border rounded-xl"></div>
     </div>
   </section>
 
   <footer class="mt-6 text-xs text-gray-500 no-print">
-    Catálogo en Firebase Storage (CSV con progreso). Existencia en Firestore. SW con bust de caché (?v=5).
+    Catálogo en Firebase Storage (CSV). Existencia en Firestore. SW cache-bust (?v=6).
   </footer>
 </div>
 
-<!-- Quagga2 (fallback de cámara) -->
-<script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
-
 <script>
-  // alerta global de JS
   addEventListener('error', e => alert('⚠️ Error JS: ' + (e?.message || e)));
 </script>
 
 <script type="module">
-/* ---------- Util ---------- */
-const $ = s => document.querySelector(s);
-const el = id => document.getElementById(id);
-(()=>{ // tabs
-  const tabs=document.querySelectorAll('.tab-btn');
-  const panes={importar:el('tab-importar'),escanear:el('tab-escanear'),reporte:el('tab-reporte'),historial:el('tab-historial')};
-  function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t);});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t);});location.hash='#'+t;}
-  tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));
-  addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));
-  activate((location.hash||'#importar').slice(1));
-})();
-function setText(id, t){ const e=el(id); if(e) e.textContent=t; }
-function setHTML(id, h){ const e=el(id); if(e) e.innerHTML=h; }
+/* ---------------- Util / UI ---------------- */
+const $ = s => document.querySelector(s); const el = id => document.getElementById(id);
+(()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:el('tab-importar'),reporte:el('tab-reporte'),historial:el('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t)});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t)});location.hash='#'+t}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1))})();
+function setText(id,t){const e=el(id); if(e) e.textContent=t;}
+function setHTML(id,h){const e=el(id); if(e) e.innerHTML=h;}
 function renderTable(map){return `<table class="min-w-full text-sm table"><tbody>${[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('')}</tbody></table>`;}
-function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 function group(list){const m=new Map();list.forEach(k=>m.set(k,(m.get(k)||0)+1));return m;}
-function detectDelimiter(s){ if(s.includes('\t')) return '\t'; const cand=[',',';','|']; let best=',',max=-1; for(const d of cand){ const c=(s.match(new RegExp('\\'+d,'g'))||[]).length; if(c>max){max=c;best=d;} } return best;}
-function splitCSVLineFlexible(line,delim){ const out=[]; let cur='',q=false; for(let i=0;i<line.length;i++){ const ch=line[i]; if(ch=='"'){ if(q&&line[i+1]=='"'){cur+='"';i++;} else q=!q; } else if(ch===delim && !q){ out.push(cur); cur=''; } else { cur+=ch; } } out.push(cur); return out; }
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 const norm=s=>(s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
 const canon=s=>norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
 
-/* ---------- Estado ---------- */
+/* ---------------- Estado ---------------- */
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[] };
-function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos cargados.`); setHTML('existenciaPreview', renderTable(state.existencia)); setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`); setText('existenciaStatus', `${state.existencia.size||0} claves.`); setHTML('scanLog','<ul>'+state.scans.slice(-30).reverse().map(i=>`<li>${i}</li>`).join('')+'</ul>'); setHTML('scanGrouped', renderTable(group(state.scans))); }
+function refreshUI(){ setText('catalogoStatus', `${state.catalog.size} códigos cargados.`); setHTML('existenciaPreview', renderTable(state.existencia)); setText('existenciaCSVStatus', `${state.existencia.size||0} claves.`); setText('existenciaStatus', `${state.existencia.size||0} claves.`); }
 
-/* ---------- Catálogo ---------- */
-let _lastCatRaw='', _lastCatDelim=',', _lastCatHeaders=[];
-function fillMappingDropdowns(headers){ ['mapBC','mapMOD','mapCOLOR','mapTALLA','mapTEMP'].forEach(id=>{ const s=el(id); if(!s) return; s.innerHTML=`<option value="">—</option>`+headers.map((h,i)=>`<option value="${i}">${h}</option>`).join(''); }); }
-function parseCatalogWithIndex(lines, delim, idx){
+/* ---------------- Catálogo ---------------- */
+let _lastCatRaw='';
+function procesarCatalogoDesdeTexto(text){
+  _lastCatRaw=text.replace(/\r/g,'');
+  const lines=_lastCatRaw.split('\n').filter(l=>l.trim());
+  if(!lines.length){ alert('Catálogo vacío.'); return; }
+  const header0=lines[0]; const delim=header0.includes('\t')?'\t':(header0.includes(';')?';':',');
+  const headers=header0.split(delim).map(h=>norm(h.replace(/^"+|"+$/g,'')));
+  const H=headers.map(h=>canon(h));
+  const idx={ BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1 };
+  const wants={BC:['CODIGO BARRA','CODIGO DE BARRAS','EAN','UPC','CODIGO','BARCODE'], MOD:['MOD','MODELO','SKU','REFERENCIA','REF'], COLOR:['COLOR','COL'], TALLA:['TALLA','SIZE','NUMERO'], TEMP:['TEMPORADA','TEMP','SEASON']};
+  for(const [k,arr] of Object.entries(wants)){ for(const a of arr){ const pos=H.indexOf(a); if(pos!==-1){ idx[k]=pos; break; } } }
+  if(idx.BC===-1){ setText('catalogoStatus','No se detectó CÓDIGO DE BARRAS.'); return; }
+
   state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
   let ok=0; const samples=[];
   for(let i=1;i<lines.length;i++){
     if(!lines[i].trim()) continue;
-    const cols=splitCSVLineFlexible(lines[i],delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
+    const cols=lines[i].split(delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
     const safe=j=>(j>=0&&j<cols.length)?cols[j]:'';
     const bc=safe(idx.BC); if(!bc) continue;
     const MOD=safe(idx.MOD), COLOR=safe(idx.COLOR), TALLA=safe(idx.TALLA), TEMP=safe(idx.TEMP);
@@ -252,49 +186,31 @@ function parseCatalogWithIndex(lines, delim, idx){
     ok++; if(samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
   }
   localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}));
-  setText('catalogoStatus', `${ok} registros cargados.`); setText('catalogoGuardadoStatus','Catálogo guardado (local).'); setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`); refreshUI();
+  setText('catalogoStatus', `${ok} registros cargados.`); setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`);
+  refreshUI();
 }
-function procesarCatalogoDesdeTexto(text){
-  _lastCatRaw=text.replace(/\r/g,''); const lines=_lastCatRaw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Catálogo vacío.'); return; }
-  const delim=detectDelimiter(lines[0]); _lastCatDelim=delim;
-  const header0=splitCSVLineFlexible(lines[0],delim).map(h=>norm(h.replace(/^"+|"+$/g,''))); _lastCatHeaders=header0.slice();
-  const H=header0.map(canon); setHTML('catalogDiag', `Delim: "${delim}" · Encabezados: ${header0.join(' | ')}`); fillMappingDropdowns(header0);
-  const wants={BC:['CODIGO BARRA','CODIGO DE BARRAS','EAN','UPC','CODIGO','BARCODE'], MOD:['MOD','MODELO','SKU','REFERENCIA','REF'], COLOR:['COLOR','COL'], TALLA:['TALLA','SIZE','NUMERO'], TEMP:['TEMPORADA','TEMP','SEASON']};
-  const idx={BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1};
-  for(const [k,arr] of Object.entries(wants)){ for(const a of arr){ const pos=H.indexOf(a); if(pos!==-1){ idx[k]=pos; break; } } }
-  if(idx.BC===-1){ setText('catalogoStatus','No se detectó CÓDIGO DE BARRAS. Usa el mapeo manual y “Aplicar mapeo manual”.'); return; }
-  parseCatalogWithIndex(lines,delim,idx);
-}
-function applyManualMap(){
-  if(!_lastCatRaw) return alert('Carga primero el archivo de catálogo.');
-  const lines=_lastCatRaw.split('\n').filter(l=>l.trim()); const delim=_lastCatDelim||detectDelimiter(lines[0]);
-  const idx={ BC:parseInt((el('mapBC')?.value||'-1'),10), MOD:parseInt((el('mapMOD')?.value||'-1'),10), COLOR:parseInt((el('mapCOLOR')?.value||'-1'),10), TALLA:parseInt((el('mapTALLA')?.value||'-1'),10), TEMP:parseInt((el('mapTEMP')?.value||'-1'),10)};
-  if(isNaN(idx.BC)||idx.BC<0) return alert('Selecciona la columna de Código.');
-  parseCatalogWithIndex(lines,delim,idx);
-}
-el('btnAplicarMapa')?.addEventListener('click', applyManualMap);
 el('fileCatalogo')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); procesarCatalogoDesdeTexto(t); });
-el('btnUsarCatalogoGuardado')?.addEventListener('click',()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo guardado.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); setText('catalogoGuardadoStatus','Usando catálogo guardado.'); refreshUI(); });
-el('btnFijarCatalogo')?.addEventListener('click',()=>{ if(!state.catalog.size) return alert('Carga un catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); setText('catalogoGuardadoStatus','Catálogo guardado.'); });
-el('btnBorrarCatalogo')?.addEventListener('click',()=>{ localStorage.removeItem('catalogo_fixed_v1'); setText('catalogoGuardadoStatus','Catálogo eliminado.'); });
+el('btnFijarCatalogo')?.addEventListener('click',()=>{ if(!state.catalog.size) return alert('Carga el catálogo primero.'); localStorage.setItem('catalogo_fixed_v1', JSON.stringify({catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]})); alert('Guardado local.'); });
+el('btnUsarCatalogoGuardado')?.addEventListener('click',()=>{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(!raw) return alert('No hay catálogo local.'); const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); refreshUI(); });
+el('btnBorrarCatalogo')?.addEventListener('click',()=>{ localStorage.removeItem('catalogo_fixed_v1'); refreshUI(); });
 
-/* ---------- Existencia ---------- */
+/* ---------------- Existencia ---------------- */
 function parseExistenciaCSV(text){
   const raw=text.replace(/\r/g,''); const lines=raw.split('\n').filter(l=>l.trim()); if(!lines.length){ alert('Archivo de existencia vacío.'); return; }
-  const firstDelim=detectDelimiter(lines[0]);
-  const firstCols=splitCSVLineFlexible(lines[0],firstDelim).map(x=>norm(x).toUpperCase());
-  const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>firstCols.includes(h));
-  let delim=',', startIndex=0, idxMap=null;
+  const first=lines[0]; const delim=first.includes('\t')?'\t':(first.includes(';')?';':',');
+  const cols0=first.split(delim).map(x=>norm(x).toUpperCase());
+  const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>cols0.includes(h));
+  let startIndex=0, idxMap=null;
   if(hasHeader){
-    delim=firstDelim; startIndex=1; const up=firstCols; const get=a=>{for(const x of a){const i=up.indexOf(x); if(i!==-1) return i;} return -1;};
+    const get=a=>{for(const x of a){const i=cols0.indexOf(x); if(i!==-1) return i;} return -1;};
     idxMap={ KEY:get(['CODIGO-COLOR-TALLA','CLAVE','KEY']), MOD:get(['MOD','MODELO','SKU']), COLOR:get(['COLOR','COL']), TALLA:get(['TALLA','SIZE','NUMERO']), CANT:get(['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']) };
-  } else { const sample=lines[1]||lines[0]; delim=detectDelimiter(sample); }
-
+    startIndex=1;
+  }
   const acc=new Map(); let ok=0, skip=0;
   for(let i=startIndex;i<lines.length;i++){
     const line=lines[i]; let key='', qty=1;
     if(hasHeader){
-      const p=splitCSVLineFlexible(line,delim).map(v=>norm(v.replace(/^"+|"+$/g,''))); const safe=j=>(j>=0&&j<p.length)?p[j]:'';
+      const p=line.split(delim).map(v=>norm(v.replace(/^"+|"+$/g,''))); const safe=j=>(j>=0&&j<p.length)?p[j]:'';
       if(idxMap.MOD>=0&&idxMap.COLOR>=0&&idxMap.TALLA>=0) key=`${canon(safe(idxMap.MOD))}|${canon(safe(idxMap.COLOR))}|${canon(safe(idxMap.TALLA))}`;
       else if(idxMap.KEY>=0&&safe(idxMap.KEY)){
         const rawKey=safe(idxMap.KEY);
@@ -305,8 +221,7 @@ function parseExistenciaCSV(text){
       if(idxMap.CANT>=0){ const num=parseInt((safe(idxMap.CANT)||'').replace(/\./g,'').replace(',',''),10); qty=Number.isFinite(num)&&num>0?num:1; }
     } else {
       let l=line.replace(/\u00A0/g,' ').trim(); l=l.replace(/\s{2,}/g,' '); l=l.replace(/\s*-\s*/g,'-');
-      let m=l.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/);
-      if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4],10)||1; }
+      let m=l.match(/^([^,]+),(.+?)\s+(\S+)\s+(\d+)\s*$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4],10)||1; }
       if(!key){ m=l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
       if(!key){ m=l.match(/^([^,]+)\s*,\s*([^\-\s][^\-]*?)\s*-\s*([^\s,]+)(?:\s*,\s*(\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
     }
@@ -316,22 +231,16 @@ function parseExistenciaCSV(text){
     ok++;
   }
   state.existencia=acc;
-  setText('existenciaCSVStatus',`${ok} claves cargadas. Saltadas: ${skip}`);
+  setText('existenciaCSVStatus',`${ok} registros. Omitidos: ${skip}`);
   setText('existenciaStatus',`${acc.size} claves.`);
   setHTML('existenciaPreview',renderTable(acc));
   refreshUI();
 }
 el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await f.text(); parseExistenciaCSV(t); });
-el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
-el('btnLimpiarExistencia')?.addEventListener('click',()=>{ const tx=el('existenciaInput'); if(tx) tx.value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
+el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto.'); return;} parseExistenciaCSV(raw); });
+el('btnLimpiarExistencia')?.addEventListener('click',()=>{ el('existenciaInput').value=''; state.existencia=new Map(); setHTML('existenciaPreview',''); setText('existenciaStatus','0 registros.'); refreshUI(); });
 
-/* ---------- Cámara muy simple ---------- */
-const video=el('videoCam'); let stream=null;
-el('btnPermisos')?.addEventListener('click', async()=>{ try{ await navigator.mediaDevices.getUserMedia({video:true}); alert('Permisos listos.'); }catch(e){ alert('No se pudo otorgar permisos: '+(e?.message||e)); }});
-el('btnCamStart')?.addEventListener('click', async()=>{ try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}); video.srcObject=stream; await video.play(); }catch(e){ alert('No se pudo iniciar cámara: '+(e?.message||e)); }});
-el('btnCamStop')?.addEventListener('click', ()=>{ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }});
-
-/* ---------- Firebase (CDN v12) ---------- */
+/* ---------------- Firebase (CDN v12) ---------------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
@@ -348,37 +257,37 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
-function setStatus(t){ setText('folioStatus', t); }
+const setStatus = t => setText('folioStatus', t);
 
-/* ---------- Folio ---------- */
-const selAlmacen=el('selAlmacen'); const folioInput=el('folioInput');
+/* ---------------- Folio ---------------- */
+const selAlmacen = el('selAlmacen'); const folioInput = el('folioInput');
 const MES_ABR=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-function generarFolio(){ const d=new Date(); const mes=MES_ABR[d.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const k=`seq_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}_${alm}`; const n=(+localStorage.getItem(k)||0)+1; localStorage.setItem(k,String(n)); return `${mes}${alm}${String(n).padStart(5,'0')}`; }
-el('btnGenerarFolio')?.addEventListener('click',()=>{ const f=generarFolio(); if(folioInput) folioInput.value=f; setStatus(`Folio: ${f}`); });
+function generarFolio(){ const d=new Date(); const mes=MES_ABR[d.getMonth()]; const alm=(selAlmacen?.value||'GLOBAL').toUpperCase(); const key=`seq_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}_${alm}`; const n=(+localStorage.getItem(key)||0)+1; localStorage.setItem(key,String(n)); return `${mes}${alm}${String(n).padStart(5,'0')}`;}
+el('btnGenerarFolio')?.addEventListener('click',()=>{ const f=generarFolio(); folioInput.value=f; setStatus(`Folio: ${f}`); });
 
-/* ---------- Firestore: publicar/cargar existencia ---------- */
+/* --- Publicar existencia (Firestore por lotes) --- */
 async function publicarCiclico(folio, existenciaMap){
   await setDoc(doc(db,'ciclicos',folio), { folio, almacen: selAlmacen?.value||'GLOBAL', actualizado: serverTimestamp(), creadoEn: serverTimestamp() }, { merge:true });
   if(!existenciaMap || !existenciaMap.size) return;
-  const arr=[...existenciaMap.entries()];
-  const CHUNK=450; let done=0;
+  const arr=[...existenciaMap.entries()]; const CHUNK=450; let done=0;
   for(let i=0;i<arr.length;i+=CHUNK){
     const slice=arr.slice(i,i+CHUNK);
     setStatus(`Subiendo existencia… ${done}/${arr.length} (lote ${Math.floor(i/CHUNK)+1})`);
     const batch=writeBatch(db); const col=collection(db,`ciclicos/${folio}/existencia`);
     for(const [clave,qty] of slice) batch.set(doc(col,clave),{clave,qty});
-    await batch.commit();
-    done+=slice.length; await sleep(0);
+    await batch.commit(); done+=slice.length; await sleep(0);
   }
   setStatus(`Existencia subida: ${done}/${arr.length}`);
 }
 async function cargarExistenciaNube(folio){
+  setStatus('Cargando existencia (Firestore)…');
   const snap=await getDocs(collection(db,`ciclicos/${folio}/existencia`));
   const acc=new Map(); snap.forEach(d=>{ const {clave,qty}=d.data(); if(clave) acc.set(clave,qty||0); });
-  state.existencia=acc; setHTML('existenciaPreview',renderTable(acc)); setText('existenciaCSVStatus',`${acc.size} claves (nube)`); setText('existenciaStatus',`${acc.size} claves (nube)`); refreshUI();
+  state.existencia=acc; setHTML('existenciaPreview',renderTable(acc));
+  setText('existenciaCSVStatus',`${acc.size} claves (nube)`); setText('existenciaStatus',`${acc.size} claves (nube)`); refreshUI();
 }
 
-/* ---------- Storage: catálogo CSV ---------- */
+/* --- Storage: subir catálogo CSV y guardar URL --- */
 function catalogoCSV(){
   const rows=['bc,MOD,COLOR,TALLA,TEMPORADA'];
   for(const [bc,meta] of state.catalog.entries()){
@@ -398,14 +307,18 @@ async function subirCatalogoStorage(folio){
     async()=>{ const url=await getDownloadURL(task.snapshot.ref); await setDoc(doc(db,'ciclicos',folio),{catalogUrl:url, actualizado:serverTimestamp()},{merge:true}); setStatus('✅ Catálogo subido y URL guardada.'); alert('✅ Catálogo listo en Storage.'); }
   );
 }
+
+/* --- Cargar catálogo con CORS + debug --- */
 async function cargarCatalogoStorage(folio){
   setStatus('Buscando catálogo en Storage…');
-
-  // 1) Siempre intentamos con Storage directo (evita URL vieja)
   const path = `catalogos/${folio}.csv`;
   try {
     const r = ref(storage, path);
-    const freshUrl = await getDownloadURL(r);   // URL con token fresca
+    const freshUrl = await getDownloadURL(r);     // URL firmada fresca
+    console.log('[Storage URL]', freshUrl);
+    // Abre en nueva pestaña para verificar si hay 403/404, útil para diagnosticar:
+    // window.open(freshUrl, '_blank');
+
     setStatus('Descargando catálogo (Storage)…');
     const res = await fetch(freshUrl, { cache: 'no-store', mode: 'cors' });
     if (!res.ok) throw new Error(`HTTP ${res.status} al descargar`);
@@ -413,29 +326,27 @@ async function cargarCatalogoStorage(folio){
     procesarCatalogoDesdeTexto(txt);
     setStatus(`Catálogo cargado: ${state.catalog.size} códigos.`);
 
-    // 2) Opcional: actualizar catalogUrl del folio con la URL fresca
+    // Opcional: actualizar catalogUrl en el doc con la URL fresca
     await setDoc(doc(db,'ciclicos',folio), { catalogUrl: freshUrl }, { merge: true });
-    return;
   } catch (e1) {
-    // 3) Fallback: usar catalogUrl guardado en el doc si lo hay
+    // Fallback: usa lo que haya en el doc (por si la ruta no coincide)
     try {
       setStatus('Intentando con catalogUrl guardado…');
       const d = await getDoc(doc(db,'ciclicos',folio));
       if (!d.exists()) throw new Error('No existe el folio en Firestore');
       const saved = d.data()?.catalogUrl;
       if (!saved) throw new Error('El folio no tiene catalogUrl');
+      console.log('[Saved URL]', saved);
       const res2 = await fetch(saved, { cache: 'no-store', mode: 'cors' });
       if (!res2.ok) throw new Error(`HTTP ${res2.status} al descargar (guardado)`);
       const txt2 = await res2.text();
       procesarCatalogoDesdeTexto(txt2);
       setStatus(`Catálogo cargado (guardado): ${state.catalog.size} códigos.`);
-      return;
     } catch (e2) {
       setStatus('❌ Error cargando catálogo');
       alert('Error al cargar catálogo: ' + (e2.message || e2));
-      // Botón para abrir manualmente y ver si es 403/404
       if (confirm('¿Abrir el archivo en Storage para diagnosticar?')) {
-        const r = ref(storage, `catalogos/${folio}.csv`);
+        const r = ref(storage, path);
         getDownloadURL(r).then(u => window.open(u, '_blank'));
       }
       throw e2;
@@ -443,59 +354,36 @@ async function cargarCatalogoStorage(folio){
   }
 }
 
-
-/* ---------- Botones folio ---------- */
+/* --- Botones --- */
 el('btnPublicarFolio')?.addEventListener('click', async()=>{
-  const folio=(folioInput?.value||'').trim() || generarFolio(); if(folioInput) folioInput.value=folio;
-  try{
-    setStatus('Publicando…');
-    await publicarCiclico(folio, state.existencia);
-    setStatus(`✅ Publicado: ${folio}`);
-    alert('✅ Publicado');
-  }catch(e){ setStatus('❌ Error publicando: '+(e?.message||e)); alert('❌ Error publicando: '+(e?.message||e)); }
+  const folio=(folioInput?.value||'').trim() || generarFolio(); folioInput.value=folio;
+  try{ setStatus('Publicando…'); await publicarCiclico(folio, state.existencia); setStatus(`✅ Publicado: ${folio}`); alert('✅ Publicado'); }
+  catch(e){ setStatus('❌ Error publicando: '+(e?.message||e)); alert('❌ Error publicando: '+(e?.message||e)); }
 });
-el('btnCargarFolio')?.addEventListener('click', async ()=>{
-  const folio = (folioInput?.value||'').trim();
-  if (!folio) return alert('Escribe o genera un folio.');
-  try {
-    await cargarCatalogoStorage(folio);     // <- ahora siempre tira a Storage
-    await cargarExistenciaNube(folio);      // existencia desde Firestore
-    alert('Folio cargado.');
-  } catch {}
+el('btnCargarFolio')?.addEventListener('click', async()=>{
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
+  try{ await cargarCatalogoStorage(folio); await cargarExistenciaNube(folio); alert('Folio cargado.'); }catch{}
 });
 el('btnActualizarExistencia')?.addEventListener('click', async()=>{
   const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  if(!state.existencia.size) return alert('No hay existencia en pantalla.');
-  try{ await publicarCiclico(folio, state.existencia); alert('Existencia actualizada.'); }catch(e){ alert('Error: '+(e?.message||e)); }
-});
-el('btnVerificarFolio')?.addEventListener('click', async()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  try{ const d=await getDoc(doc(db,'ciclicos',folio)); if(!d.exists()) return alert('No existe el folio.'); const exi=await getDocs(collection(db,`ciclicos/${folio}/existencia`)); alert(`Folio OK. Claves exi: ${exi.size}`); }catch(e){ alert('Error: '+(e?.message||e)); }
+  if(!state.existencia.size) return alert('No hay existencia en pantalla.'); await publicarCiclico(folio, state.existencia); alert('Existencia actualizada.');
 });
 el('btnSubirCatalogoStorage')?.addEventListener('click', async()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  try{ await subirCatalogoStorage(folio); }catch(e){ alert('Error: '+(e?.message||e)); }
-});
-el('btnCargarCatalogoStorage')?.addEventListener('click', async()=>{
-  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.');
-  try{ await cargarCatalogoStorage(folio); }catch(e){ alert('Error: '+(e?.message||e)); }
+  const folio=(folioInput?.value||'').trim(); if(!folio) return alert('Escribe o genera un folio.'); await subirCatalogoStorage(folio);
 });
 
-/* ---------- Reporte / Historial ---------- */
+/* ---------------- Reporte / Historial ---------------- */
 function computeReport(){ const esc=group(state.scans), exi=state.existencia, sob=new Map(), fal=new Map(), escT=new Map(); const keys=new Set([...esc.keys(),...exi.keys()]); keys.forEach(k=>{ const e=esc.get(k)||0, x=exi.get(k)||0; if(e>0) escT.set(k,e); if(e-x>0) sob.set(k,e-x); if(x-e>0) fal.set(k,x-e); }); return {escT,sob,falt:fal}; }
 el('btnGenerarReporte')?.addEventListener('click',()=>{ const {escT,sob,falt}=computeReport(); setHTML('tablaEscaneados',renderTable(escT)); setHTML('tablaSobrantes',renderTable(sob)); setHTML('tablaFaltantes',renderTable(falt)); });
 el('btnExportarCSV')?.addEventListener('click',()=>{ const {escT,sob,falt}=computeReport(); let csv='SECCION,CLAVE,CANTIDAD\n'; const add=(n,m)=>{ for(const [k,v] of m) csv+=`${n},"${k.replaceAll('"','""')}",${v}\n`; }; add('ESCANEADOS',escT); add('SOBRANTES',sob); add('FALTANTES',falt); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='reporte_conteo.csv'; a.click(); URL.revokeObjectURL(url); });
 
-function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); setHTML('histList',html.join('')); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#escanear'; })); }
+function renderHist(){ const raw=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const html=['<table class="min-w-full text-sm table"><thead><tr><th class="text-left">Fecha</th><th class="text-left">Nombre</th><th class="text-left">Escaneos</th><th class="text-left">Claves exi</th><th></th></tr></thead><tbody>']; for(let i=0;i<raw.length;i++){ const it=raw[i]; html.push(`<tr><td class="px-2">${new Date(it.ts).toLocaleString()}</td><td class="px-2">${it.nombre||'-'}</td><td class="px-2">${it.scans?.length||0}</td><td class="px-2">${(it.existencia && Object.keys(it.existencia).length)||0}</td><td class="px-2"><button data-i="${i}" class="btn bg-gray-100 btnLoad">Cargar</button></td></tr>`); } html.push('</tbody></table>'); setHTML('histList',html.join('')); document.querySelectorAll('.btnLoad').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.getAttribute('data-i'),10); const data=raw[i]; state.catalog=new Map(data.catalog||[]); state.indexByKey=new Map(data.indexByKey||[]); state.keyMeta=new Map(data.keyMeta||[]); state.existencia=new Map(Object.entries(data.existencia||{})); state.scans=data.scans||[]; refreshUI(); location.hash='#reporte'; })); }
 function saveHist(nombre='Cíclico'){ const hist=JSON.parse(localStorage.getItem('conteo_cklass_hist')||'[]'); const payload={ts:Date.now(), nombre, scans:[...state.scans], existencia:Object.fromEntries(state.existencia), catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta]}; hist.unshift(payload); localStorage.setItem('conteo_cklass_hist', JSON.stringify(hist.slice(0,50))); renderHist(); alert('Histórico guardado.'); }
-el('btnGuardarHistorico')?.addEventListener('click',()=>{ const n=prompt('Nombre del conteo / folio','Cíclico'); if(!n) return; saveHist(n); });
-el('btnNuevaSesion')?.addEventListener('click',()=>{ state.scans=[]; refreshUI(); setText('lastStatus','Sesión reiniciada.'); });
 
-/* ---------- Init ---------- */
 addEventListener('DOMContentLoaded', async()=>{
   try{ const raw=localStorage.getItem('catalogo_fixed_v1'); if(raw){ const p=JSON.parse(raw); state.catalog=new Map(p.catalog||[]); state.indexByKey=new Map(p.indexByKey||[]); state.keyMeta=new Map(p.keyMeta||[]); } }catch{}
   refreshUI(); renderHist();
-  const f=new URLSearchParams(location.search).get('folio'); if(f){ const F=f.toUpperCase(); folioInput.value=F; try{ await cargarCatalogoStorage(F); await cargarExistenciaNube(F); }catch{} }
+  const f=new URLSearchParams(location.search).get('folio'); if(f){ folioInput.value=f.toUpperCase(); try{ await cargarCatalogoStorage(f.toUpperCase()); await cargarExistenciaNube(f.toUpperCase()); }catch{} }
 });
 </script>
 </body>
