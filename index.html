@@ -141,6 +141,112 @@
 </script>
 
 <script type="module">
+  function detectDelimGeneric(line){
+  if (line.includes('\t')) return '\t';
+  const commas = (line.match(/,/g)||[]).length;
+  const semis  = (line.match(/;/g)||[]).length;
+  return semis>commas ? ';' : ',';
+}
+function splitCSVLine(line,delim){
+  const out=[]; let cur='',q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch=='"'){
+      if(q && line[i+1]=='"'){ cur+='"'; i++; }
+      else { q=!q; }
+    } else if(ch===delim && !q){ out.push(cur); cur=''; }
+    else { cur+=ch; }
+  }
+  out.push(cur);
+  return out;
+}
+const norm = s => (s==null?'':String(s)).replace(/^\uFEFF/,'').trim();
+const canon = s => norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^A-Za-z0-9]+/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
+
+function parseCatalogCSV(text){
+  const raw = text.replace(/\r/g,'');
+  const lines = raw.split('\n').filter(l=>l.trim());
+  if(!lines.length) throw new Error('Catálogo vacío');
+
+  const headerLine = lines[0];
+  const delim = detectDelimGeneric(headerLine);
+
+  const colsRaw = splitCSVLine(headerLine,delim).map(h=>norm(h.replace(/^"+|"+$/g,'')));
+  const H = colsRaw.map(c=>canon(c));
+
+  // MUCHAS variantes de encabezados
+  const wants = {
+    BC:    ['CODIGO BARRA','CODIGO DE BARRAS','CODIGOBARRA','EAN','UPC','BARCODE','CODIGO','COD BARRAS','CB','COD BARRA'],
+    MOD:   ['MOD','MODELO','SKU','REFERENCIA','REF','ESTILO'],
+    COLOR: ['COLOR','COL','COLOUR'],
+    TALLA: ['TALLA','SIZE','NUMERO','NUM','TAMANO','MEDIDA'],
+    TEMP:  ['TEMPORADA','TEMP','SEASON']
+  };
+
+  const idx = {BC:-1,MOD:-1,COLOR:-1,TALLA:-1,TEMP:-1};
+  for (const [k, arr] of Object.entries(wants)){
+    for (const a of arr){
+      const p = H.indexOf(a);
+      if (p !== -1){ idx[k]=p; break; }
+    }
+  }
+
+  // Si NO encontró BC, intenta heurística (col numérica larga)
+  if (idx.BC === -1) {
+    // mira hasta 10 filas para decidir
+    const top = Math.min(10, lines.length-1);
+    const counts = new Map(); // col -> hits
+    for (let i=1;i<=top;i++){
+      const r = splitCSVLine(lines[i],delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
+      r.forEach((val, cidx)=>{
+        const v = String(val).replace(/\s+/g,'');
+        if (/^\d{6,}$/.test(v)) counts.set(cidx, (counts.get(cidx)||0)+1);
+      });
+    }
+    let best = -1, bestHits = 0;
+    counts.forEach((hits, cidx)=>{ if (hits>bestHits){best=cidx; bestHits=hits;} });
+    if (best !== -1) idx.BC = best;
+  }
+
+  // Si no hay MOD/COLOR/TALLA, seguimos pero esos campos quedarán vacíos
+  if (idx.BC === -1) {
+    throw new Error('No se detectó columna de CÓDIGO DE BARRAS (BC) en el CSV.');
+  }
+
+  // Parsear filas
+  state.catalog.clear(); state.indexByKey.clear(); state.keyMeta.clear();
+  let ok = 0; const samples = [];
+  for (let i=1;i<lines.length;i++){
+    if(!lines[i].trim()) continue;
+    const c = splitCSVLine(lines[i],delim).map(v=>norm(v.replace(/^"+|"+$/g,'')));
+    const safe = j => (j>=0 && j<c.length) ? c[j] : '';
+
+    const bc    = safe(idx.BC);
+    const MOD   = safe(idx.MOD);
+    const COLOR = safe(idx.COLOR);
+    const TALLA = safe(idx.TALLA);
+    const TEMP  = safe(idx.TEMP);
+
+    if (!bc) continue; // sin código, no indexo
+
+    state.catalog.set(bc, {MOD, COLOR, TALLA, TEMPORADA:TEMP});
+
+    const key = `${canon(MOD)}|${canon(COLOR)}|${canon(TALLA)}`;
+    if (!state.indexByKey.has(key)) state.indexByKey.set(key, []);
+    state.indexByKey.get(key).push(bc);
+    if (!state.keyMeta.has(key)) state.keyMeta.set(key, {MOD, COLOR, TALLA, TEMPORADA:TEMP});
+    ok++;
+    if (samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
+  }
+
+  setHTML('catalogFirstRows', samples.length
+    ? `Primeras filas:<br>- ${samples.join('<br>- ')}`
+    : 'No se pudieron mostrar muestras (verifica el archivo).');
+
+  setText('masterStatus', `Catálogo cargado: ${ok} códigos (delim "${delim}")`);
+}
+</script>
 /* ---------- Tabs/UI ---------- */
 const $ = s => document.querySelector(s); const el = id => document.getElementById(id);
 (()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={importar:el('tab-importar'),reporte:el('tab-reporte'),historial:el('tab-historial')};function activate(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t)});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t)});location.hash='#'+t}tabs.forEach(btn=>btn.addEventListener('click',()=>activate(btn.dataset.tab)));addEventListener('hashchange',()=>activate((location.hash||'#importar').slice(1)));activate((location.hash||'#importar').slice(1))})();
