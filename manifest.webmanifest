@@ -1,21 +1,12 @@
 {
-  "name": "Conteo Cklass",
+  "name": "Conteo CKLASS",
   "short_name": "Conteo",
-  "start_url": ".",
+  "start_url": "./?source=pwa",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#0d6efd",
-  "description": "Aplicación para conteos cíclicos y escaneo de códigos de barras",
+  "theme_color": "#1877F2",
   "icons": [
-    {
-      "src": "icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
