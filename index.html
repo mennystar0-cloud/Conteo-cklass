@@ -53,7 +53,7 @@
         <details class="mt-3">
           <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
           <div class="text-xs mt-2" id="catalogDiag">—</div>
-          <div class="text-xs mt-2" id="catalogFirstRows">—</div>
+          <div class="text-xs mt-2 whitespace-pre-wrap" id="catalogFirstRows">—</div>
         </details>
       </div>
 
@@ -190,14 +190,17 @@ async function idbSet(k,v){const db=await idbOpen();return new Promise((res,rej)
 /* ========= Firebase ========= */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
-import { getStorage, ref, getBytes } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
+import {
+  getStorage, ref, getDownloadURL,
+  setMaxDownloadRetryTime, setMaxOperationRetryTime
+} from "https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
   authDomain: "cklass-conteo.firebaseapp.com",
   projectId: "cklass-conteo",
-  storageBucket: "cklass-conteo.appspot.com",  // ✅ CORREGIDO
+  storageBucket: "cklass-conteo.appspot.com",
   messagingSenderId: "695313165938",
   appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
   measurementId: "G-45LC81EE44"
@@ -210,7 +213,11 @@ const auth = getAuth(app);
 // ✅ Login anónimo (necesario para Rules seguras)
 signInAnonymously(auth).catch(e=>console.error('Auth anon error:', e));
 
-/* ========= Catálogo (Storage → getBytes) ========= */
+// (Seguros largos por si el navegador tarda)
+setMaxDownloadRetryTime(storage, 10 * 60 * 1000);
+setMaxOperationRetryTime(storage, 10 * 60 * 1000);
+
+/* ========= Catálogo (Storage → URL firmada + fetch no-store) ========= */
 const STORAGE_CATALOG_PATH = "static/catalogo-master.csv";
 
 function detectDelim(line){ if(line.includes('\t')) return '\t'; const c=(line.match(/,/g)||[]).length, s=(line.match(/;/g)||[]).length; return s>c?';':','; }
@@ -239,22 +246,31 @@ function parseCatalogCSV(text){
     if(samples.length<3) samples.push([bc,MOD,COLOR,TALLA].join(' | '));
     ok++;
   }
-  setText('masterStatus',`Catálogo: ${ok} códigos.`); setHTML('catalogFirstRows', samples.length?`Primeras filas:<br>- ${samples.join('<br>- ')}`:'—');
+  setText('masterStatus',`Catálogo: ${ok} códigos.`);
+  setHTML('catalogFirstRows', samples.length?`Primeras filas:\n- ${samples.join('\n- ')}`:'—');
 }
 
 async function cargarCatalogoStorage(show=true){
   try{
     setText('masterStatus','Descargando catálogo de Storage…');
-    const r = ref(storage, STORAGE_CATALOG_PATH);
-    const bytes = await getBytes(r);
-    const text  = new TextDecoder('utf-8').decode(bytes);
+
+    const fileRef = ref(storage, STORAGE_CATALOG_PATH);
+    const url = await getDownloadURL(fileRef);
+
+    const resp = await fetch(url, { cache: 'no-store' });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    let text = await resp.text();
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // quitar BOM
+
     parseCatalogCSV(text);
+
     await idbSet('master',{catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], ts:Date.now()});
     setHTML('catalogDiag',`OK · Registros: ${state.catalog.size}`);
     setText('masterStatus',`MAESTRO (Storage): ${state.catalog.size} códigos (cache actualizado)`);
     if(show) alert('Catálogo actualizado desde Storage.');
   }catch(e){
     const msg = e?.message || e?.code || String(e);
+    console.error('Error catálogo:', e);
     setText('masterStatus','❌ Error cargando catálogo: '+ msg);
     alert('❌ Error cargando catálogo: ' + msg);
   }
@@ -353,7 +369,7 @@ el('btnVerificar').addEventListener('click', async()=>{
 const video=el('video'), overlay=el('overlay'), scanLog=el('scanLog'), scanGrouped=el('scanGrouped');
 const chkAuto=el('chkAuto'), chkBeep=el('chkBeep'), engineSelect=el('engineSelect');
 let stream=null, bdDetector=null, lastCode='', lastTime=0, quaggaOn=false;
-const beepOk=new Audio('data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA'); // beep simple
+const beepOk=new Audio('data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAA');
 
 function addScan(code){ const now=Date.now(); if(code===lastCode && (now-lastTime)<900) return; lastCode=code; lastTime=now; state.scans.push(code); state.groupedScans=group(state.scans); scanLog.innerHTML='<ul>'+state.scans.slice(-20).map(x=>`<li>${x}</li>`).join('')+'</ul>'; scanGrouped.innerHTML=renderTable(state.groupedScans); if(chkBeep.checked) beepOk.play().catch(()=>{}); }
 async function startCam(){ stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); video.srcObject=stream; await video.play(); }
