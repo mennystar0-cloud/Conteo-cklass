@@ -399,13 +399,50 @@ async function subirCatalogoStorage(folio){
   );
 }
 async function cargarCatalogoStorage(folio){
-  setStatus('Leyendo URL de catálogo…');
-  const d=await getDoc(doc(db,'ciclicos',folio)); if(!d.exists()){ alert('No existe el folio.'); return; }
-  const url=d.data()?.catalogUrl; if(!url){ alert('Este folio no tiene catalogUrl.'); return; }
-  setStatus('Descargando catálogo (Storage)…');
-  const res=await fetch(url,{cache:'no-store'}); if(!res.ok) throw new Error('No se pudo descargar el catálogo.');
-  const txt=await res.text(); procesarCatalogoDesdeTexto(txt); setStatus(`Catálogo cargado (Storage): ${state.catalog.size} códigos.`);
+  setStatus('Buscando catálogo en Storage…');
+
+  // 1) Siempre intentamos con Storage directo (evita URL vieja)
+  const path = `catalogos/${folio}.csv`;
+  try {
+    const r = ref(storage, path);
+    const freshUrl = await getDownloadURL(r);   // URL con token fresca
+    setStatus('Descargando catálogo (Storage)…');
+    const res = await fetch(freshUrl, { cache: 'no-store', mode: 'cors' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} al descargar`);
+    const txt = await res.text();
+    procesarCatalogoDesdeTexto(txt);
+    setStatus(`Catálogo cargado: ${state.catalog.size} códigos.`);
+
+    // 2) Opcional: actualizar catalogUrl del folio con la URL fresca
+    await setDoc(doc(db,'ciclicos',folio), { catalogUrl: freshUrl }, { merge: true });
+    return;
+  } catch (e1) {
+    // 3) Fallback: usar catalogUrl guardado en el doc si lo hay
+    try {
+      setStatus('Intentando con catalogUrl guardado…');
+      const d = await getDoc(doc(db,'ciclicos',folio));
+      if (!d.exists()) throw new Error('No existe el folio en Firestore');
+      const saved = d.data()?.catalogUrl;
+      if (!saved) throw new Error('El folio no tiene catalogUrl');
+      const res2 = await fetch(saved, { cache: 'no-store', mode: 'cors' });
+      if (!res2.ok) throw new Error(`HTTP ${res2.status} al descargar (guardado)`);
+      const txt2 = await res2.text();
+      procesarCatalogoDesdeTexto(txt2);
+      setStatus(`Catálogo cargado (guardado): ${state.catalog.size} códigos.`);
+      return;
+    } catch (e2) {
+      setStatus('❌ Error cargando catálogo');
+      alert('Error al cargar catálogo: ' + (e2.message || e2));
+      // Botón para abrir manualmente y ver si es 403/404
+      if (confirm('¿Abrir el archivo en Storage para diagnosticar?')) {
+        const r = ref(storage, `catalogos/${folio}.csv`);
+        getDownloadURL(r).then(u => window.open(u, '_blank'));
+      }
+      throw e2;
+    }
+  }
 }
+
 
 /* ---------- Botones folio ---------- */
 el('btnPublicarFolio')?.addEventListener('click', async()=>{
