@@ -1,5 +1,5 @@
 // service-worker.js — Conteo Cklass (actualizado)
-const CACHE_VERSION = 'cklass-conteo-v4'; // <- súbelo cuando despliegues
+const CACHE_VERSION = 'cklass-conteo-v5'; // <- súbelo cuando despliegues
 const PRECACHE = [
   './',
   './index.html',
