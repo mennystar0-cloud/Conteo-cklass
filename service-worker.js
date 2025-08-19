@@ -6,7 +6,7 @@ const PRECACHE = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './static/catalogo-master.csv', // Catálogo embebido
+   // Catálogo embebido
 ];
 
 self.addEventListener('install', event => {
