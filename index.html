@@ -312,45 +312,59 @@ async function subirCatalogoStorage(folio){
 async function cargarCatalogoStorage(folio){
   setStatus('Buscando catálogo en Storage…');
   const path = `catalogos/${folio}.csv`;
-  try {
-    const r = ref(storage, path);
-    const freshUrl = await getDownloadURL(r);     // URL firmada fresca
-    console.log('[Storage URL]', freshUrl);
-    // Abre en nueva pestaña para verificar si hay 403/404, útil para diagnosticar:
-    // window.open(freshUrl, '_blank');
 
-    setStatus('Descargando catálogo (Storage)…');
-    const res = await fetch(freshUrl, { cache: 'no-store', mode: 'cors' });
-    if (!res.ok) throw new Error(`HTTP ${res.status} al descargar`);
-    const txt = await res.text();
-    procesarCatalogoDesdeTexto(txt);
-    setStatus(`Catálogo cargado: ${state.catalog.size} códigos.`);
-
-    // Opcional: actualizar catalogUrl en el doc con la URL fresca
-    await setDoc(doc(db,'ciclicos',folio), { catalogUrl: freshUrl }, { merge: true });
-  } catch (e1) {
-    // Fallback: usa lo que haya en el doc (por si la ruta no coincide)
-    try {
-      setStatus('Intentando con catalogUrl guardado…');
-      const d = await getDoc(doc(db,'ciclicos',folio));
-      if (!d.exists()) throw new Error('No existe el folio en Firestore');
-      const saved = d.data()?.catalogUrl;
-      if (!saved) throw new Error('El folio no tiene catalogUrl');
-      console.log('[Saved URL]', saved);
-      const res2 = await fetch(saved, { cache: 'no-store', mode: 'cors' });
-      if (!res2.ok) throw new Error(`HTTP ${res2.status} al descargar (guardado)`);
-      const txt2 = await res2.text();
-      procesarCatalogoDesdeTexto(txt2);
-      setStatus(`Catálogo cargado (guardado): ${state.catalog.size} códigos.`);
-    } catch (e2) {
-      setStatus('❌ Error cargando catálogo');
-      alert('Error al cargar catálogo: ' + (e2.message || e2));
-      if (confirm('¿Abrir el archivo en Storage para diagnosticar?')) {
-        const r = ref(storage, path);
-        getDownloadURL(r).then(u => window.open(u, '_blank'));
-      }
-      throw e2;
+  // helper p/descargar con diagnóstico
+  const baja = async (url) => {
+    console.log('[Catalog URL]', url);
+    const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
+    if (!res.ok) {
+      const txt = await res.text().catch(()=>'(sin cuerpo)');
+      throw new Error(`HTTP ${res.status} ${res.statusText} — ${txt.slice(0,200)}`);
     }
+    return res.text();
+  };
+
+  try {
+    // 1) URL fresca desde Storage (evita URL vieja)
+    const url1 = await getDownloadURL(ref(storage, path));
+    try {
+      const txt = await baja(url1);
+      procesarCatalogoDesdeTexto(txt);
+      await setDoc(doc(db,'ciclicos',folio), { catalogUrl: url1 }, { merge:true });
+      setStatus(`Catálogo cargado: ${state.catalog.size} códigos.`);
+      return;
+    } catch (e1) {
+      console.warn('Fallo URL fresca', e1);
+      // 2) Reintento: delay breve (propagación de permisos/archivo grande)
+      await sleep(1000);
+      const url2 = await getDownloadURL(ref(storage, path));
+      try {
+        const txt = await baja(url2);
+        procesarCatalogoDesdeTexto(txt);
+        await setDoc(doc(db,'ciclicos',folio), { catalogUrl: url2 }, { merge:true });
+        setStatus(`Catálogo cargado (2º intento): ${state.catalog.size} códigos.`);
+        return;
+      } catch (e2) {
+        console.warn('Fallo 2º intento', e2);
+        // 3) Fallback: usa catalogUrl guardado en Firestore
+        const d = await getDoc(doc(db,'ciclicos',folio));
+        const saved = d.exists() ? d.data()?.catalogUrl : '';
+        if (!saved) throw e2;
+        const txt = await baja(saved);
+        procesarCatalogoDesdeTexto(txt);
+        setStatus(`Catálogo cargado (guardado): ${state.catalog.size} códigos.`);
+        return;
+      }
+    }
+  } catch (err) {
+    setStatus('❌ Error cargando catálogo');
+    alert('Error al cargar catálogo: ' + (err.message || err));
+    // Abre la URL real para ver 403/404 en el navegador
+    try {
+      const urlDebug = await getDownloadURL(ref(storage, path));
+      if (confirm('¿Abrir URL del catálogo para diagnosticar?')) window.open(urlDebug, '_blank');
+    } catch {}
+    throw err;
   }
 }
 
