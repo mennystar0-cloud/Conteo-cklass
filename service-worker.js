@@ -1,32 +1,31 @@
-const CACHE = "cklass-conteo-v1";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./manifest.webmanifest",
-  "https://cdn.tailwindcss.com",
-  "https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"
+// service-worker.js
+const CACHE_VERSION = 'cklass-cat-v1'; // súbelo cuando cambies el CSV
+const PRECACHE = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './static/catalogo-master.csv', // Catálogo embebido
 ];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll(PRECACHE)));
+  self.skipWaiting();
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(k => k !== CACHE_VERSION && caches.delete(k))))
   );
+  self.clients.claim();
 });
 
-self.addEventListener("fetch", (e) => {
-  const { request } = e;
-  if (request.method !== "GET") return;
-  e.respondWith(
-    caches.match(request).then(cached => cached ||
-      fetch(request).then(resp => {
-        const copy = resp.clone();
-        caches.open(CACHE).then(c => c.put(request, copy));
-        return resp;
-      }).catch(() => cached)
-    )
-  );
+self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+  if (url.origin === location.origin) {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
+  }
 });
