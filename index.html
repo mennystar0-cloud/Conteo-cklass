@@ -8,9 +8,10 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" />
   <script>
+    // Bust de caché del SW
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-       navigator.serviceWorker.register("./service-worker.js?v=2").catch(()=>{});
+        navigator.serviceWorker.register("./service-worker.js?v=4").catch(()=>{});
       });
     }
   </script>
@@ -208,6 +209,13 @@
   </footer>
 </div>
 
+<script>
+/* ALERTA global si hay error JS que detenga todo */
+window.addEventListener('error', e => {
+  alert('⚠️ Error JS: ' + (e?.message || e));
+});
+</script>
+
 <script type="module">
 /* ===== Tabs ===== */
 const $ = s => document.querySelector(s);
@@ -291,6 +299,7 @@ function parseCatalogWithIndex(lines, delim, idx){
   setText('catalogoGuardadoStatus','Catálogo guardado (local).');
   setHTML('catalogFirstRows', `Primeras filas:<br>- ${samples.join('<br>- ')}`);
   refreshUI();
+  try{ alert('✅ Catálogo leído: ' + state.catalog.size + ' registros'); }catch{}
 }
 function procesarCatalogoDesdeTexto(text){
   _lastCatRaw = text.replace(/\r/g,'');
@@ -399,7 +408,7 @@ function parseExistenciaCSV(text){
   setText('existenciaStatus',`${acc.size} claves.`);
   setHTML('existenciaPreview',renderTable(acc));
   refreshUI();
-  if (ok===0){ alert('Existencia leída pero 0 registros válidos. Revisa formato.'); }
+  try{ alert('✅ Existencia procesada: ' + state.existencia.size + ' claves'); }catch{}
 }
 el('fileExistenciaCSV')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; const t=await readFileSmart(f); parseExistenciaCSV(t); });
 el('btnProcesarExistencia')?.addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\uFEFF/g,'').replace(/\t/g,',').trim(); if(!raw){alert('No hay texto pegado.'); return;} parseExistenciaCSV(raw); });
@@ -426,16 +435,14 @@ function handleKeyFromCode(code){
 function handleCode(code){
   const now=Date.now(); if(code===lastCode && now-lastTs<900) return; lastCode=code; lastTs=now;
   const {key, ok}=handleKeyFromCode(code);
-  if(!ok){ if(el('chkBeep')?.checked) {/* se puede agregar audio error */} alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
-  if(el('chkBeep')?.checked){ /* audio ok opcional */ }
+  if(!ok){ alert('Código NO encontrado en catálogo:\n\n'+code+'\n\nNo se registró.'); return; }
   if(el('chkAuto')?.checked){ state.scans.push(key); refreshUI(); } else { const si=el('scanInput'); if(si) si.value=key; }
   setText('lastStatus','Leído: '+code);
 }
 el('scanInput')?.addEventListener('keydown',e=>{
   if(e.key!=='Enter') return; const v=e.target.value.trim(); e.target.value=''; if(!v) return;
   const {key, ok}=handleKeyFromCode(v);
-  if(!ok){ if(el('chkBeep')?.checked){} alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
-  if(el('chkBeep')?.checked) {}
+  if(!ok){ alert('Código NO encontrado en catálogo:\n\n'+v+'\n\nNo se registró.'); return; }
   state.scans.push(key); refreshUI();
 });
 
