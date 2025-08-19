@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo Cíclico CKLASS — Diagnóstico CSV</title>
+  <title>Conteo Cíclico CKLASS</title>
   <meta name="theme-color" content="#1877F2" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -23,8 +23,8 @@
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
-    <h1 class="text-2xl font-bold">Conteo Cíclico — Catálogo en Firebase Storage (Modo Diagnóstico)</h1>
-    <p class="text-sm text-gray-600">Esta versión muestra red/encoding/delimitador y primeras líneas para detectar por qué no carga.</p>
+    <h1 class="text-2xl font-bold">Conteo Cíclico — Catálogo en Firebase Storage</h1>
+    <p class="text-sm text-gray-600">Catálogo se descarga 1 vez (IndexedDB). Existencia por folio (Firestore). Escaneo con cámara o manual.</p>
   </header>
 
   <!-- Tabs -->
@@ -44,20 +44,18 @@
       <div class="card">
         <h2 class="font-semibold mb-2">Catálogo maestro (Firebase Storage)</h2>
         <p class="text-xs text-gray-600 mb-2">
-          Debe estar en <code>static/catalogo-master.csv</code>. Esta pantalla validará ruta, red, codificación y separador.
+          Debe estar en <code>static/catalogo-master.csv</code>. Encabezados admitidos: <b>CODIGO_BARRA / CODIGO / EAN / UPC</b>, <b>MOD</b>, <b>COLOR</b>, <b>TALLA</b>, <i>TEMPORADA</i>.
         </p>
         <div class="flex flex-wrap gap-2">
           <button id="btnRecargarCloud" class="btn bg-blue-600 text-white">Recargar desde Storage</button>
           <button id="btnResumenCat" class="btn bg-gray-100">Resumen</button>
           <button id="btnBorrarCat" class="btn bg-red-600 text-white">Borrar caché local</button>
-          <button id="btnForzarURL" class="btn bg-amber-500 text-white" title="Evita caché usando un query param único">Forzar URL única</button>
+          <button id="btnForzarURL" class="btn bg-amber-500 text-white" title="Evita caché con query param único">Forzar URL única</button>
         </div>
         <div id="masterStatus" class="text-xs text-gray-600 mt-2">—</div>
         <details class="mt-3" open>
           <summary class="text-sm font-medium">Diagnóstico catálogo</summary>
-          <div class="text-xs mt-2 space-y-2" id="catalogDiag">
-            <div>—</div>
-          </div>
+          <div class="text-xs mt-2 space-y-2" id="catalogDiag">—</div>
           <div class="text-xs mt-2 whitespace-pre-wrap" id="catalogFirstRows">—</div>
         </details>
       </div>
@@ -217,11 +215,11 @@ const auth = getAuth(app);
 
 // Auth anónima (para rules seguras)
 signInAnonymously(auth).catch(e=>console.error('Auth anon error:', e));
-// Timeouts Storage (no afectan a fetch, pero mantenemos)
+// Timeouts Storage (por si la red está lenta)
 setMaxDownloadRetryTime(storage, 10 * 60 * 1000);
 setMaxOperationRetryTime(storage, 10 * 60 * 1000);
 
-/* ========= Catálogo (URL firmada + fetch no-store + DECODER robusto) ========= */
+/* ========= Catálogo (URL firmada + fetch no-store) ========= */
 const STORAGE_CATALOG_PATH = "static/catalogo-master.csv";
 
 function detectCSV(text) {
@@ -248,33 +246,9 @@ function splitCSV(line, d) {
 
 const state={ catalog:new Map(), indexByKey:new Map(), keyMeta:new Map(), existencia:new Map(), scans:[], groupedScans:new Map() };
 
-function normalizeBOMAndDecode(buf, contentType=''){
-  // Detect BOM / UTFs
-  const u8 = new Uint8Array(buf);
-  const be = (u8[0]===0xFE && u8[1]===0xFF);
-  const le = (u8[0]===0xFF && u8[1]===0xFE);
-  const utf8bom = (u8[0]===0xEF && u8[1]===0xBB && u8[2]===0xBF);
-
-  if (be)  return new TextDecoder('utf-16be').decode(u8.subarray(2));
-  if (le)  return new TextDecoder('utf-16le').decode(u8.subarray(2));
-  if (utf8bom) return new TextDecoder('utf-8').decode(u8.subarray(3));
-
-  const type = (contentType || '').toLowerCase();
-  const tryList = [];
-  if (type.includes('utf-8')) tryList.push('utf-8');
-  if (type.includes('utf-16le')) tryList.push('utf-16le');
-  if (type.includes('utf-16be')) tryList.push('utf-16be');
-  // fallback comunes
-  tryList.push('utf-8','windows-1252','iso-8859-1');
-
-  for (const enc of tryList){
-    try { return new TextDecoder(enc).decode(u8); } catch {}
-  }
-  // Último recurso: utf-8 “best effort”
-  return new TextDecoder('utf-8', { fatal:false }).decode(u8);
-}
-
 function parseCatalogCSV(text){
+  // BOM utf-8
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const det = detectCSV(text);
   let lines = text.split(/\r?\n/);
   if (det.dropFirst) lines = lines.slice(1);
@@ -284,7 +258,7 @@ function parseCatalogCSV(text){
   const delim = det.delim;
   const headers = splitCSV(lines[0], delim).map(h => canon(h));
   const want = {
-    BC:    ['CODIGO DE BARRAS','CODIGO BARRA','BARCODE','EAN','EAN13','UPC','CODIGO','COD_BARRAS','CBARRAS'],
+    BC:    ['CODIGO_BARRA','CODIGO DE BARRAS','CODIGO BARRA','BARCODE','EAN','EAN13','UPC','CODIGO','COD_BARRAS','CBARRAS'],
     MOD:   ['MOD','MODELO','SKU'],
     COLOR: ['COLOR','COL'],
     TALLA: ['TALLA','SIZE','NUMERO','NUM'],
@@ -329,31 +303,20 @@ let FORCE_BUSTER = null;
 async function cargarCatalogoStorage(show=true){
   try{
     setText('masterStatus','Descargando catálogo de Storage…');
-    const baseRef = ref(storage, STORAGE_CATALOG_PATH);
-    const signed = await getDownloadURL(baseRef);
-
-    const url = FORCE_BUSTER ? (signed + (signed.includes('?')?'&':'?') + 'v=' + FORCE_BUSTER) : signed;
-
-    const resp = await fetch(url, { cache: 'no-store' });
-    const ct = resp.headers.get('content-type') || '';
-    const cl = resp.headers.get('content-length') || 'desconocido';
+    const url = await getDownloadURL(ref(storage, STORAGE_CATALOG_PATH));
+    const finalURL = FORCE_BUSTER ? (url + (url.includes('?')?'&':'?') + 'v=' + FORCE_BUSTER) : url;
+    const resp = await fetch(finalURL, { cache: 'no-store' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    let text = await resp.text();
 
-    const buf = await resp.arrayBuffer();
-    const bytes = (new Intl.NumberFormat('es-MX')).format(buf.byteLength);
-    const decoded = normalizeBOMAndDecode(buf, ct);
+    // Vista cruda (primeras 5)
+    const headPreview = text.split(/\r?\n/).slice(0,5).join('\n');
+    setHTML('catalogDiag', `<div><b>Crudo (5 líneas):</b><pre>${headPreview.replace(/[<>]/g,m=>({'<':'&lt;','>':'&gt;'}[m]))}</pre></div>`);
 
-    // Panel de red y crudo
-    const rawHead = decoded.split(/\r?\n/).slice(0,5).join('\n');
-    setHTML('catalogDiag', `
-      <div><b>HTTP:</b> ${resp.status} · <b>Content-Type:</b> ${ct} · <b>Content-Length:</b> ${cl} · <b>Bytes recibidos:</b> ${bytes}</div>
-      <div class="mt-2"><b>Crudo decodificado (primeras 5 líneas):</b><pre>${rawHead.replace(/[<>]/g,m=>({'<':'&lt;','>':'&gt;'}[m]))}</pre></div>
-    `);
-
-    parseCatalogCSV(decoded);
+    parseCatalogCSV(text);
 
     await idbSet('master',{catalog:[...state.catalog], indexByKey:[...state.indexByKey], keyMeta:[...state.keyMeta], ts:Date.now()});
-    setHTML('catalogDiag', (el('catalogDiag').innerHTML || '') + `<div class="mt-2"><b>OK:</b> ${state.catalog.size} registros parseados.</div>`);
+    setHTML('catalogDiag', (el('catalogDiag').innerHTML || '') + `<div class="mt-2"><b>OK:</b> ${state.catalog.size} registros.</div>`);
     setText('masterStatus',`MAESTRO (Storage): ${state.catalog.size} códigos (cache actualizado)`);
     if (show) alert('Catálogo actualizado desde Storage.');
   }catch(e){
