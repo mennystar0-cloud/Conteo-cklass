@@ -1,159 +1,185 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Conteo Cíclico CKLASS</title>
-  <meta name="theme-color" content="#1877F2" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="icons/icon-192.png" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
-    .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
-    .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
-    .cam{height:45vh;max-height:420px;background:#000;border-radius:1rem;overflow:hidden}
-    video{width:100%;height:100%;object-fit:cover}
-    #overlay{position:absolute;inset:0;pointer-events:none}
-    pre{background:#f8fafc;border-radius:.75rem;padding:.5rem;overflow:auto}
-    code{background:#f1f5f9;border-radius:.375rem;padding:.1rem .25rem}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-    @media print {.no-print{display:none!important}}
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Conteo Cíclico CKLASS</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .btn{padding:.5rem .75rem;border-radius:.5rem;font-size:.875rem}
+  .card{background:#fff;border-radius:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:1rem}
+  .table th,.table td{border-bottom:1px solid #e5e7eb;padding:.25rem .5rem}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+  @media print {.no-print{display:none!important}}
+</style>
 </head>
 <body class="bg-gray-50 text-gray-900">
 <div class="max-w-7xl mx-auto p-4">
   <header class="mb-4 no-print">
-    <h1 class="text-2xl font-bold">Conteo Cíclico — Firestore</h1>
-    <p class="text-sm text-gray-600">Catálogo <b>barcodes</b> en Firestore. Folios C/R/S/G consecutivos. Escaneo multi‑dispositivo con acumulado global.</p>
+    <h1 class="text-2xl font-bold">Conteo Cíclico — Firestore + Sheets</h1>
+    <p class="text-sm text-gray-600">Catálogo en Firestore (vía Google Sheets). Multi‑dispositivo. Históricos. Cámara y reportes con “compensados”.</p>
   </header>
 
-  <!-- LOG -->
+  <!-- Salud + LOG -->
   <div class="card no-print mb-4">
     <div class="flex items-center justify-between">
-      <h3 class="font-semibold">Estado</h3>
+      <div class="flex gap-3 text-sm">
+        <span id="authBadge">Auth: —</span>
+        <span id="connBadge">Conexión: —</span>
+        <span id="catBadge">Catálogo: —</span>
+      </div>
       <div class="flex gap-2">
-        <button id="btnCopyLog" class="btn bg-gray-100 text-gray-800">Copiar log</button>
-        <button id="btnClearLog" class="btn bg-gray-100 text-gray-800">Limpiar log</button>
+        <button id="btnCopyLog" class="btn bg-gray-100">Copiar log</button>
+        <button id="btnClearLog" class="btn bg-gray-100">Limpiar log</button>
       </div>
     </div>
-    <div id="uiLog" class="mono text-xs bg-gray-50 rounded-lg p-2 h-32 overflow-auto border mt-2"></div>
+    <div id="uiLog" class="mono text-xs bg-gray-50 rounded-lg p-2 h-28 overflow-auto border mt-2"></div>
   </div>
 
   <!-- Tabs -->
   <div class="border-b border-gray-200 mb-4 no-print">
-    <nav class="-mb-px flex gap-2" id="tabs">
-      <button data-tab="folio" class="tab-btn border-b-2 border-blue-600 text-blue-600 px-4 py-2 text-sm font-medium">1) Folio</button>
-      <button data-tab="escanear" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">2) Escanear</button>
-      <button data-tab="existencia" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">3) Existencia</button>
-      <button data-tab="reporte" class="tab-btn border-b-2 border-transparent hover:text-blue-600 hover:border-blue-600 px-4 py-2 text-sm font-medium">4) Reporte</button>
+    <nav class="-mb-px flex gap-2">
+      <button data-tab="folio" class="tab btn border-b-2 border-blue-600 text-blue-600">1) Folio</button>
+      <button data-tab="escanear" class="tab btn border-b-2 border-transparent">2) Escanear</button>
+      <button data-tab="existencia" class="tab btn border-b-2 border-transparent">3) Existencia</button>
+      <button data-tab="reporte" class="tab btn border-b-2 border-transparent">4) Reporte</button>
+      <button data-tab="historial" class="tab btn border-b-2 border-transparent">5) Historial</button>
     </nav>
   </div>
 
   <!-- Folio -->
-  <section id="tab-folio" class="tab-pane block">
-    <div class="card">
-      <h2 class="font-semibold mb-2">Folio (Firestore)</h2>
-      <div class="grid md:grid-cols-4 gap-2">
-        <select id="selAlmacen" class="rounded-lg border border-gray-200 p-2 text-sm">
-          <option value="CAL">Calzado (C)</option>
-          <option value="ROP">Ropa (R)</option>
-          <option value="SPO">Sport (S)</option>
-          <option value="GLO">Global (G)</option>
-        </select>
-        <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Vacío = generar automático" />
-        <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
-        <button id="btnUsarFolio" class="btn bg-blue-600 text-white">Usar folio</button>
-      </div>
-      <p class="text-xs text-gray-600 mt-2">Formato: <b>C1 / R1 / S1 / G1</b> (transacción segura en Firestore).</p>
-      <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
+  <section id="tab-folio" class="card">
+    <h2 class="font-semibold mb-2">Folio (Firestore)</h2>
+    <div class="grid md:grid-cols-5 gap-2">
+      <select id="selAlmacen" class="rounded-lg border border-gray-200 p-2 text-sm">
+        <option value="CAL">Calzado (C)</option>
+        <option value="ROP">Ropa (R)</option>
+        <option value="SPO">Sport (S)</option>
+        <option value="GLO">Global (G)</option>
+      </select>
+      <input id="folioInput" class="rounded-lg border border-gray-200 p-2 text-sm" placeholder="Vacío = generar automático" />
+      <button id="btnGenerarFolio" class="btn bg-gray-200">Generar folio</button>
+      <button id="btnUsarFolio" class="btn bg-blue-600 text-white">Usar folio</button>
+      <button id="btnCerrarFolio" class="btn bg-rose-600 text-white">Cerrar folio</button>
     </div>
+    <p class="text-xs text-gray-600 mt-2">Formato: <b>C1/R1/S1/G1</b> (transacción segura en Firestore). Usa el mismo folio en varios dispositivos para acumular global.</p>
+    <div id="folioStatus" class="text-xs text-gray-600 mt-1">—</div>
 
-    <div class="card mt-4">
+    <div class="mt-4">
       <h3 class="font-semibold mb-2">Acumulado del folio (en vivo)</h3>
       <div id="scanGrouped" class="overflow-auto max-h-72 border rounded-xl p-2 text-sm">Sin folio activo.</div>
     </div>
   </section>
 
   <!-- Escanear -->
-  <section id="tab-escanear" class="tab-pane hidden">
-    <div class="card">
-      <h2 class="font-semibold mb-2">Escaneo</h2>
-      <div class="grid md:grid-cols-2 gap-4">
-        <div>
-          <h3 class="font-semibold mb-2">Entrada manual o lector</h3>
-          <input id="scanInput" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="EAN / Código de barras" />
-          <div class="text-xs text-gray-500" id="diag">Escribe un EAN y Enter.</div>
-          <h3 class="font-semibold mt-4 mb-2">Últimos escaneos</h3>
-          <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl p-2 text-sm"></div>
+  <section id="tab-escanear" class="card hidden">
+    <h2 class="font-semibold mb-2">Escaneo</h2>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <h3 class="font-semibold mb-2">Lector / Manual</h3>
+        <input id="scanInput" class="w-full rounded-xl border border-gray-200 p-3 mb-2" placeholder="EAN / Código de barras (Enter)" />
+        <div class="text-xs text-gray-500">Tip: con lector USB basta enfocar y presionar.</div>
+
+        <h3 class="font-semibold mt-4 mb-2">Cámara</h3>
+        <div class="flex gap-2">
+          <button id="btnCamStart" class="btn bg-green-600 text-white">Iniciar cámara</button>
+          <button id="btnCamStop" class="btn bg-gray-200">Detener</button>
         </div>
-        <div>
-          <h3 class="font-semibold mb-2">Clave resuelta</h3>
-          <div id="lastResolve" class="border rounded-xl p-3 text-sm bg-gray-50">—</div>
-        </div>
+        <video id="video" class="w-full rounded-lg mt-2 bg-black" autoplay playsinline muted style="max-height:320px"></video>
+      </div>
+      <div>
+        <h3 class="font-semibold mb-2">Clave resuelta</h3>
+        <div id="lastResolve" class="border rounded-xl p-3 text-sm bg-gray-50">—</div>
+        <h3 class="font-semibold mt-4 mb-2">Últimos escaneos</h3>
+        <div id="scanLog" class="overflow-auto max-h-64 border rounded-xl p-2 text-sm"></div>
       </div>
     </div>
   </section>
 
   <!-- Existencia -->
-  <section id="tab-existencia" class="tab-pane hidden">
-    <div class="card">
-      <h2 class="font-semibold mb-2">Existencia física</h2>
-      <p class="text-xs text-gray-600 mb-2">Formatos: <code>MOD,COLOR,TALLA,CANT</code> · <code>MOD|COLOR|TALLA[,CANT]</code> · <code>MOD,COLOR-TALLA[,CANT]</code></p>
-      <input id="fileExistenciaCSV" type="file" accept=".csv" class="block w-full text-sm mb-2" />
-      <div class="bg-gray-50 rounded-xl p-2 mt-3">
-        <label class="text-xs text-gray-600">Pegar existencia</label>
-        <textarea id="existenciaInput" rows="4" class="w-full rounded-xl border border-gray-200 p-2 text-sm"></textarea>
-        <div class="flex gap-2 mt-2">
-          <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
-          <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
-        </div>
-        <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 claves.</div>
-      </div>
+  <section id="tab-existencia" class="card hidden">
+    <h2 class="font-semibold mb-2">Existencia (pegar)</h2>
+    <p class="text-xs text-gray-600 mb-2">Formato único: <code>MOD|COLOR|TALLA[,CANT]</code> · Ej: <code>500-10|AZUL|M,10</code></p>
+    <textarea id="existenciaInput" rows="6" class="w-full rounded-xl border border-gray-200 p-2 text-sm"></textarea>
+    <div class="flex gap-2 mt-2">
+      <button id="btnProcesarExistencia" class="btn bg-blue-600 text-white">Procesar</button>
+      <button id="btnLimpiarExistencia" class="btn bg-gray-100">Limpiar</button>
     </div>
+    <div class="text-xs text-gray-600 mt-2" id="existenciaStatus">0 claves.</div>
   </section>
 
   <!-- Reporte -->
-  <section id="tab-reporte" class="tab-pane hidden">
-    <div class="card">
-      <h2 class="font-semibold mb-2">Reporte</h2>
-      <div class="flex gap-2 mb-3 no-print">
-        <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
-        <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
-      </div>
-      <div class="grid md:grid-cols-3 gap-4">
-        <div class="border rounded-xl p-3"><h3 class="font-semibold mb-2">Escaneados (folio)</h3><div id="tablaEscaneados" class="overflow-auto max-h-80"></div></div>
-        <div class="border rounded-xl p-3"><h3 class="font-semibold mb-2">Sobrantes</h3><div id="tablaSobrantes" class="overflow-auto max-h-80"></div></div>
-        <div class="border rounded-xl p-3"><h3 class="font-semibold mb-2">Faltantes</h3><div id="tablaFaltantes" class="overflow-auto max-h-80"></div></div>
+  <section id="tab-reporte" class="card hidden">
+    <h2 class="font-semibold mb-2">Reporte</h2>
+
+    <!-- Encabezado de Reporte (SALE EN IMPRESIÓN) -->
+    <div id="reportHeader" class="border rounded-xl p-3 mb-3">
+      <div class="flex flex-wrap items-center gap-4 text-sm">
+        <div><b>Folio:</b> <span id="hdrFolio">—</span></div>
+        <div><b>Almacén:</b> <span id="hdrAlmacen">—</span></div>
+        <div><b>Fecha:</b> <span id="hdrFecha">—</span></div>
       </div>
     </div>
+
+    <div class="flex flex-wrap gap-2 items-center no-print mb-3">
+      <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
+      <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
+      <!-- Botones de impresión solicitados -->
+      <button id="btnPrintTodo" class="btn bg-emerald-600 text-white">Imprimir Todo</button>
+      <button id="btnPrintFalt" class="btn bg-emerald-600 text-white">Imprimir Faltantes</button>
+      <button id="btnPrintSobr" class="btn bg-emerald-600 text-white">Imprimir Sobrantes</button>
+      <button id="btnPrintComp" class="btn bg-emerald-600 text-white">Imprimir Compensados</button>
+    </div>
+
+    <div id="bloquesReporte" class="grid md:grid-cols-3 gap-4">
+      <div class="border rounded-xl p-3" data-block="escaneados">
+        <h3 class="font-semibold mb-2">Escaneados (folio)</h3>
+        <div id="tablaEscaneados" class="overflow-auto max-h-80"></div>
+      </div>
+      <div class="border rounded-xl p-3" data-block="sobrantes">
+        <h3 class="font-semibold mb-2">Sobrantes</h3>
+        <div id="tablaSobrantes" class="overflow-auto max-h-80"></div>
+      </div>
+      <div class="border rounded-xl p-3" data-block="faltantes">
+        <h3 class="font-semibold mb-2">Faltantes</h3>
+        <div id="tablaFaltantes" class="overflow-auto max-h-80"></div>
+      </div>
+    </div>
+
+    <div class="border rounded-xl p-3 mt-4" data-block="compensados">
+      <h3 class="font-semibold mb-2">Compensados (por MOD|COLOR)</h3>
+      <div id="tablaComp" class="overflow-auto max-h-80"></div>
+    </div>
+  </section>
+
+  <!-- Historial -->
+  <section id="tab-historial" class="card hidden">
+    <h2 class="font-semibold mb-2">Historial de folios</h2>
+    <div id="histList" class="text-sm">—</div>
   </section>
 </div>
 
 <script type="module">
-/* ========= UTIL ========= */
+/* ===== Utils & UI ===== */
 const $=s=>document.querySelector(s), el=id=>document.getElementById(id);
-const logBox=el('uiLog');
-function log(...args){ const t=new Date().toLocaleTimeString(); const line='['+t+'] '+args.map(a=>typeof a==='string'?a:JSON.stringify(a)).join(' '); logBox.textContent+=line+'\\n'; logBox.scrollTop=logBox.scrollHeight; }
-el('btnClearLog').addEventListener('click',()=>logBox.textContent='');
-el('btnCopyLog').addEventListener('click',async()=>{await navigator.clipboard.writeText(logBox.textContent||'')});
-window.addEventListener('error',e=>log('ERROR:',e.message));
-window.addEventListener('unhandledrejection',e=>log('PROMISE:',String(e.reason?.message||e.reason||e)));
-
-const canon=s=>(s==null?'':String(s)).normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toUpperCase();
-function renderTableFromMap(m){
-  const rows=[...m.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('');
-  return `<table class="min-w-full text-sm table"><tbody>${rows||'<tr><td class="px-2 text-gray-500">—</td><td></td></tr>'}</tbody></table>`;
+const logBox=el('uiLog'); const setText=(id,t)=>el(id).textContent=t;
+function log(...args){ const t=new Date().toLocaleTimeString(); logBox.textContent+=`[${t}] ${args.map(a=>typeof a==='string'?a:JSON.stringify(a)).join(' ')}\n`; logBox.scrollTop=logBox.scrollHeight; }
+el('btnClearLog').onclick=()=>logBox.textContent='';
+el('btnCopyLog').onclick=()=>navigator.clipboard.writeText(logBox.textContent||'');
+const canon=s=>(s==null?'':String(s)).normalize('NFD').replace(/[\u0300-\\u036f]/g,'').trim().toUpperCase();
+function mapTable(map){
+  const rows=[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('');
+  return `<table class="min-w-full text-sm table"><tbody>${rows||'<tr><td class="px-2 text-gray-400">—</td><td></td></tr>'}</tbody></table>`;
 }
+function showTab(name){ document.querySelectorAll('.tab').forEach(b=>{ const on=b.dataset.tab===name; b.classList.toggle('text-blue-600',on); b.classList.toggle('border-blue-600',on); }); document.querySelectorAll('section.card').forEach(s=>s.classList.add('hidden')); el('tab-'+name).classList.remove('hidden'); location.hash='#'+name; }
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab)); showTab((location.hash||'#folio').slice(1));
 
-/* ========= TABS ========= */
-(()=>{const tabs=document.querySelectorAll('.tab-btn');const panes={folio:el('tab-folio'),escanear:el('tab-escanear'),existencia:el('tab-existencia'),reporte:el('tab-reporte')};function act(t){tabs.forEach(b=>{b.classList.toggle('text-blue-600',b.dataset.tab===t);b.classList.toggle('border-blue-600',b.dataset.tab===t)});Object.entries(panes).forEach(([k,p])=>{p.classList.toggle('hidden',k!==t);p.classList.toggle('block',k===t)});location.hash='#'+t}tabs.forEach(btn=>btn.addEventListener('click',()=>act(btn.dataset.tab)));addEventListener('hashchange',()=>act((location.hash||'#folio').slice(1)));act((location.hash||'#folio').slice(1))})();
-
-/* ========= FIREBASE ========= */
+/* ===== Firebase ===== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
 import {
-  getFirestore, doc, setDoc, collection, getDoc, getDocs,
-  serverTimestamp, runTransaction, onSnapshot, increment
+  getFirestore, doc, setDoc, getDoc, collection, getDocs,
+  serverTimestamp, runTransaction, onSnapshot, increment,
+  query, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
 
@@ -166,205 +192,214 @@ const firebaseConfig = {
   appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
   measurementId: "G-45LC81EE44"
 };
-log('Inicializando Firebase…');
-const app = initializeApp(firebaseConfig);
-const db  = getFirestore(app);
+const app=initializeApp(firebaseConfig);
+const db = getFirestore(app);
 const auth = getAuth(app);
-onAuthStateChanged(auth,u=>{ if(u) log('Auth OK (anónimo):',u.uid); else log('Auth: sin sesión'); });
-signInAnonymously(auth).catch(e=>log('Auth anon ERROR:',e.message||e));
+onAuthStateChanged(auth,u=>{ setText('authBadge', u?`Auth: OK (${u.uid.slice(0,6)}…)`:'Auth: —'); });
+signInAnonymously(auth).catch(e=>log('Auth anon ERROR:', e?.message||e));
+setText('connBadge', navigator.onLine?'Conexión: online':'Conexión: offline'); addEventListener('online',()=>setText('connBadge','Conexión: online')); addEventListener('offline',()=>setText('connBadge','Conexión: offline'));
 
-/* ========= ESTADO ========= */
-const state = {
-  folio: '',
-  unsubAcum: null,
-  acumulado: new Map(),     // clave -> qty (del folio en vivo)
-  scansLocal: [],           // últimos escaneos locales (para UI)
-  existencia: new Map(),    // clave -> qty (cargada localmente)
-};
-const selAlmacen=el('selAlmacen'), folioInput=el('folioInput'), folioStatus=el('folioStatus');
-const scanLog=el('scanLog'), scanGrouped=el('scanGrouped'), lastResolve=el('lastResolve');
+/* ===== Estado ===== */
+const state={ folio:'', almacen:'', unsub:null, acumulado:new Map(), existencia:new Map(), lastEAN:'', cam:null, detector:null };
 
-/* ========= FOLIOS (C/R/S/G por transacción) ========= */
-const PREF = { CAL:'C', ROP:'R', SPO:'S', GLO:'G' };
+/* Helper para nombre bonito de almacén */
+const ALM_NOMBRE = { CAL:'Calzado', ROP:'Ropa', SPO:'Sport', GLO:'Global' };
+
+/* ===== Folios (C/R/S/G) ===== */
+const PREF={CAL:'C', ROP:'R', SPO:'S', GLO:'G'};
 async function generarFolioTx(){
-  const pref = PREF[selAlmacen.value] || 'G';
-  const ref = doc(db, 'counters', 'folios', pref);
-  const num = await runTransaction(db, async (tx)=>{
-    const snap = await tx.get(ref);
-    if(!snap.exists()) throw new Error(`Falta contador ${pref} (counters/folios/${pref})`);
-    const next = snap.data().next || 1;
-    tx.update(ref, { next: next + 1 });
-    return next;
+  const pref=PREF[el('selAlmacen').value]||'G';
+  const ref=doc(db,'counters','folios',pref);
+  const num=await runTransaction(db, async tx=>{
+    const snap=await tx.get(ref); if(!snap.exists()) throw new Error(`Falta counters/folios/${pref}`);
+    const next=(snap.data().next||1); tx.update(ref,{next:next+1}); return next;
   });
-  return `${pref}${num}`; // C1 / R1 / S1 / G1
+  return `${pref}${num}`;
 }
-function subscribeAcumulado(folio){
-  if(state.unsubAcum){ state.unsubAcum(); state.unsubAcum=null; }
-  if(!folio){ scanGrouped.innerHTML='Sin folio activo.'; return; }
-  const col = collection(db,'ciclicos',folio,'acumulado');
-  state.unsubAcum = onSnapshot(col, (qs)=>{
-    const m = new Map();
-    qs.forEach(d=>{ const {qty=0}=d.data()||{}; m.set(d.id, qty); });
-    state.acumulado = m;
-    scanGrouped.innerHTML = renderTableFromMap(m);
-    log('Acumulado actualizado:', m.size,'claves');
-  }, (err)=>log('onSnapshot acumulado ERROR:', err.message||err));
+function subAcumulado(f){
+  if(state.unsub){ state.unsub(); state.unsub=null; }
+  if(!f){ el('scanGrouped').innerHTML='Sin folio activo.'; return; }
+  const col=collection(db,'ciclicos',f,'acumulado');
+  state.unsub=onSnapshot(col,(qs)=>{
+    const m=new Map(); qs.forEach(d=>m.set(d.id, (d.data()?.qty)||0));
+    state.acumulado=m; el('scanGrouped').innerHTML=mapTable(m); setText('catBadge', 'Catálogo: listo');
+  }, err=>log('onSnapshot ERROR', err?.message||err));
 }
 
-/* Botones folio */
-el('btnGenerarFolio').addEventListener('click', async()=>{
-  try{
-    const f = await generarFolioTx();
-    folioInput.value = f;
-    folioStatus.textContent = `Folio generado: ${f}`;
-    log('Folio generado:', f);
-  }catch(e){ alert('No se pudo generar folio: '+(e?.message||e)); log('Gen folio ERROR:', e?.message||e); }
-});
-el('btnUsarFolio').addEventListener('click', async()=>{
-  const f=(folioInput.value||'').trim();
-  if(!f) return alert('Escribe o genera un folio.');
-  try{
-    await setDoc(doc(db,'ciclicos',f), { folio:f, almacen: selAlmacen.value, ts: serverTimestamp() }, { merge:true });
-    state.folio = f;
-    folioStatus.textContent = `Folio activo: ${f}`;
-    subscribeAcumulado(f);
-    log('Folio activo:', f);
-  }catch(e){ alert('No se pudo activar folio: '+(e?.message||e)); }
-});
-
-/* ========= ESCANEO / ENTRADA ========= */
-function pushScanLog(row){
-  state.scansLocal.push(row);
-  state.scansLocal = state.scansLocal.slice(-50);
-  scanLog.innerHTML = '<ul>' + state.scansLocal.map(x=>`<li>${x.ts} · ${x.msg}</li>`).join('') + '</ul>';
+/* Actualiza encabezado de Reporte */
+function updateReportHeader(){
+  el('hdrFolio').textContent = state.folio || '—';
+  const nombre = ALM_NOMBRE[state.almacen] || state.almacen || '—';
+  el('hdrAlmacen').textContent = nombre;
+  el('hdrFecha').textContent = new Date().toLocaleString();
 }
+
+el('btnGenerarFolio').onclick=async()=>{
+  try{ const f=await generarFolioTx(); el('folioInput').value=f; setText('folioStatus','Folio generado: '+f); log('Folio generado', f); }
+  catch(e){ alert('No se pudo generar folio: '+(e?.message||e)); }
+};
+el('btnUsarFolio').onclick=async()=>{
+  const f=(el('folioInput').value||'').trim(); if(!f) return alert('Escribe o genera un folio.');
+  const almacenSel = el('selAlmacen').value;
+  await setDoc(doc(db,'ciclicos',f),{folio:f, almacen:almacenSel, status:'abierto', ts:serverTimestamp()},{merge:true});
+  state.folio=f; state.almacen=almacenSel;
+  setText('folioStatus','Folio activo: '+f); subAcumulado(f); log('Folio activo', f);
+  updateReportHeader();
+};
+el('btnCerrarFolio').onclick=async()=>{
+  if(!state.folio) return alert('Activa un folio primero.');
+  await setDoc(doc(db,'ciclicos',state.folio),{status:'cerrado', closedAt:serverTimestamp()},{merge:true});
+  alert('Folio cerrado: '+state.folio);
+  updateReportHeader();
+};
+
+/* ===== Escaneo (manual + cámara) ===== */
+function pushScan(s){ const box=el('scanLog'); const t=new Date().toLocaleTimeString(); box.innerHTML=`<div>${t} · ${s}</div>`+box.innerHTML; box.innerHTML=box.innerHTML.split('</div>').slice(0,60).join('</div>'); }
 async function resolverEAN(ean){
-  const ref = doc(db,'barcodes', ean);
-  const snap = await getDoc(ref);
+  const snap=await getDoc(doc(db,'barcodes',ean));
   if(!snap.exists()) return null;
-  const {MOD='',COLOR='',TALLA='',TEMPORADA=''} = snap.data()||{};
-  return {MOD,COLOR,TALLA,TEMPORADA};
+  const {MOD='',COLOR='',TALLA=''}=snap.data()||{};
+  return {MOD,COLOR,TALLA};
 }
-async function agregarScanPorEAN(ean){
-  const ts=new Date().toLocaleTimeString();
-  if(!state.folio){ pushScanLog({ts, msg:`${ean} · sin folio activo`}); lastResolve.textContent='Activa un folio primero.'; return; }
+async function addScanByEAN(ean){
+  if(!state.folio) return pushScan(`${ean} · sin folio`);
   try{
-    const info = await resolverEAN(ean);
-    if(!info){
-      lastResolve.innerHTML = `<div class="text-red-600">No encontrado en catálogo: ${ean}</div>`;
-      pushScanLog({ts, msg:`${ean} · no está en catálogo`});
-      return;
-    }
-    const clave = `${canon(info.MOD)}|${canon(info.COLOR)}|${canon(info.TALLA)}`;
-    lastResolve.innerHTML = `<div><b>${clave}</b></div><div class="text-xs text-gray-600">${info.MOD} / ${info.COLOR} / ${info.TALLA}</div>`;
-    // Incremento global por folio
-    await setDoc(
-      doc(db,'ciclicos', state.folio, 'acumulado', clave),
-      { qty: increment(1), MOD: info.MOD, COLOR: info.COLOR, TALLA: info.TALLA, updatedAt: serverTimestamp() },
-      { merge: true }
-    );
-    pushScanLog({ts, msg:`${ean} → ${clave} (+1)`});
-  }catch(e){
-    pushScanLog({ts, msg:`${ean} · ERROR: ${e?.message||e}`});
-  }
+    const info=await resolverEAN(ean);
+    if(!info){ el('lastResolve').innerHTML=`<span class="text-red-600">No en catálogo:</span> ${ean}`; pushScan(`${ean} · no catálogo`); return; }
+    const clave=`${canon(info.MOD)}|${canon(info.COLOR)}|${canon(info.TALLA)}`;
+    await setDoc(doc(db,'ciclicos',state.folio,'acumulado',clave),{qty:increment(1), MOD:info.MOD, COLOR:info.COLOR, TALLA:info.TALLA, updatedAt:serverTimestamp()},{merge:true});
+    el('lastResolve').innerHTML=`<b>${clave}</b><div class="text-xs text-gray-600">${info.MOD} / ${info.COLOR} / ${info.TALLA}</div>`;
+    pushScan(`${ean} → ${clave} (+1)`);
+  }catch(e){ pushScan(`${ean} · ERROR ${e?.message||e}`); }
 }
-el('scanInput').addEventListener('keydown', (e)=>{
-  if(e.key==='Enter'){
-    const v=e.target.value.trim();
-    e.target.value='';
-    if(!v) return;
-    agregarScanPorEAN(v);
-  }
+el('scanInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ const v=e.target.value.trim(); e.target.value=''; if(v) addScanByEAN(v); }
 });
 
-/* ========= EXISTENCIA (CSV / pegado) ========= */
-function detectCSV(text){ const lines=text.split(/\\r?\\n/); const first=lines[0]||''; const m=/^sep\\s*=\\s*([,;|\\t])\\s*$/i.exec(first); if(m) return {delim:m[1],dropFirst:true}; const sample=lines.slice(0,200).join('\\n'); const counts={'\\t':(sample.match(/\\t/g)||[]).length,';':(sample.match(/;/g)||[]).length,',':(sample.match(/,/g)||[]).length,'|':(sample.match(/\\|/g)||[]).length}; const d=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0]||','; return {delim:d,dropFirst:false}; }
-function splitCSV(line, d) { const out=[]; let cur='', q=false; for (let i=0;i<line.length;i++){ const ch=line[i]; if (ch === '\"'){ if(q && line[i+1] === '\"'){ cur+='\"'; i++; } else { q=!q; } } else if (!q && ch === d){ out.push(cur); cur=''; } else { cur+=ch; } } out.push(cur); return out; }
-function parseExistencia(text){
-  const det = detectCSV(text); let lines=text.split(/\\r?\\n/); if(det.dropFirst) lines=lines.slice(1); lines=lines.filter(l=>l.trim()); if(!lines.length){ alert('Existencia vacía.'); return; }
-  const d = det.delim; const cols0=splitCSV(lines[0],d).map(x=>String(x).trim().toUpperCase());
-  const hasHeader=['MOD','MODELO','SKU','CODIGO-COLOR-TALLA','CLAVE','KEY','COLOR','TALLA','SIZE','CANTIDAD','QTY','STOCK','EXISTENCIA','CANT'].some(h=>cols0.includes(h));
-  let start=0, idx=null;
-  if(hasHeader){
-    const pos = arr => { for(const a of arr){ const i=cols0.indexOf(a); if(i!==-1) return i;} return -1; };
-    idx={ KEY:pos(['CODIGO-COLOR-TALLA','CLAVE','KEY']), MOD:pos(['MOD','MODELO','SKU']), COLOR:pos(['COLOR','COL']), TALLA:pos(['TALLA','SIZE','NUMERO']), CANT:pos(['CANTIDAD','QTY','STOCK','EXISTENCIA','CANT']) };
-    start=1;
-  }
-  const acc=new Map(); let ok=0, skip=0;
-  for(let i=start;i<lines.length;i++){
-    const line=lines[i]; let key='', qty=1;
-    if(hasHeader){
-      const p=splitCSV(line,d).map(v=>String(v||'').trim()); const s=j=>(j>=0&&j<p.length)?p[j]:'';
-      if(idx.MOD>=0&&idx.COLOR>=0&&idx.TALLA>=0) key=`${canon(s(idx.MOD))}|${canon(s(idx.COLOR))}|${canon(s(idx.TALLA))}`;
-      else if(idx.KEY>=0&&s(idx.KEY)){
-        const kd=s(idx.KEY);
-        if(kd.includes('|')){ const [m,c,t]=kd.split('|').map(canon); key=`${m}|${c}|${t}`; }
-        else if(kd.includes(',')){ const [m,tail]=kd.split(','); const [c,t]=(tail||'').split('-'); key=`${canon(m)}|${canon(c)}|${canon(t)}`; }
-        else if(kd.includes('-')){ const [m,c,t]=kd.split('-').map(canon); key=`${m}|${c}|${t}`; }
+/* Cámara con BarcodeDetector */
+async function camStart(){
+  if(!('BarcodeDetector' in window)) { alert('Tu navegador no soporta BarcodeDetector. Usa lector USB o Chrome/Android.'); return; }
+  state.detector=new BarcodeDetector({ formats:['ean_13','ean_8','upc_a','upc_e','code_128'] });
+  state.cam=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
+  const v=el('video'); v.srcObject=state.cam; await v.play();
+  let lock=false;
+  const tick=async()=>{
+    if(!state.cam) return;
+    try{
+      if(!lock){ lock=true;
+        const det=await state.detector.detect(v);
+        if(det && det[0]){
+          const code=(det[0].rawValue||'').trim();
+          if(code && code!==state.lastEAN){ state.lastEAN=code; addScanByEAN(code); }
+        }
+        lock=false;
       }
-      if(idx.CANT>=0){ const n=parseInt((s(idx.CANT)||'').replace(/\\./g,'').replace(',',''),10); qty=Number.isFinite(n)&&n>0?n:1; }
-    } else {
-      let l=line.replace(/\\u00A0/g,' ').trim(); l=l.replace(/\\s{2,}/g,' '); l=l.replace(/\\s*-\\s*/g,'-');
-      let m=l.match(/^([^,]+),(.+?)\\s+(\\S+)\\s+(\\d+)\\s*$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4],10)||1; }
-      if(!key){ m=l.match(/^([^|]+)\\|([^|]+)\\|([^|,]+)(?:\\s*,\\s*(\\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
-      if(!key){ m=l.match(/^([^,]+)\\s*,\\s*([^\\-\\s][^\\-]*?)\\s*-\\s*([^\\s,]+)(?:\\s*,\\s*(\\d+))?$/); if(m){ key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`; qty=parseInt(m[4]||'1',10)||1; } }
-    }
-    if(!key){ skip++; continue; }
+    }catch{ lock=false; }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+function camStop(){ if(state.cam){ state.cam.getTracks().forEach(t=>t.stop()); state.cam=null; } }
+el('btnCamStart').onclick=camStart; el('btnCamStop').onclick=camStop;
+
+/* ===== Existencia (formato único) ===== */
+function parseExist(text){
+  const lines=(text||'').replace(/\uFEFF/g,'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const acc=new Map(); let ok=0, skip=0;
+  for(const l of lines){
+    const m=l.match(/^([^|]+)\|([^|]+)\|([^|,]+)(?:\s*,\s*(\d+))?$/);
+    if(!m){ skip++; continue; }
+    const key=`${canon(m[1])}|${canon(m[2])}|${canon(m[3])}`;
+    const qty=parseInt(m[4]||'1',10)||1;
     acc.set(key,(acc.get(key)||0)+qty); ok++;
   }
-  state.existencia=acc;
-  el('existenciaStatus').textContent=`${acc.size} claves. (${ok} filas válidas; omitidas ${skip})`;
+  state.existencia=acc; setText('existenciaStatus', `${acc.size} claves. (${ok} filas válidas; omitidas ${skip})`);
 }
-el('fileExistenciaCSV').addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(!f) return; parseExistencia(await f.text()); });
-el('btnProcesarExistencia').addEventListener('click',()=>{ const raw=(el('existenciaInput')?.value||'').replace(/\\uFEFF/g,'').trim(); if(!raw){alert('No hay texto.'); return;} parseExistencia(raw); });
-el('btnLimpiarExistencia').addEventListener('click',()=>{ el('existenciaInput').value=''; state.existencia=new Map(); el('existenciaStatus').textContent='0 claves.'; });
+el('btnProcesarExistencia').onclick=()=>{ const raw=el('existenciaInput').value||''; if(!raw.trim()) return alert('No hay texto.'); parseExist(raw); };
+el('btnLimpiarExistencia').onclick=()=>{ el('existenciaInput').value=''; state.existencia=new Map(); setText('existenciaStatus','0 claves.'); };
 
-/* ========= REPORTE ========= */
-function renderMapTable(m, containerId){
-  const html = renderTableFromMap(m);
-  el(containerId).innerHTML = html;
+/* ===== Reporte + Compensados + Export ===== */
+function render(containerId, map){ el(containerId).innerHTML=mapTable(map); }
+function computeSobrantes(acum, ex){ const m=new Map(); for(const [k,qty] of acum.entries()){ const e=ex.get(k)||0; if(qty>e) m.set(k, qty-e); } return m; }
+function computeFaltantes(acum, ex){ const m=new Map(); for(const [k,e] of ex.entries()){ const q=acum.get(k)||0; if(e>q) m.set(k, e-q); } return m; }
+function computeCompensados(acum, ex){
+  const group = new Map(); // key2 = MOD|COLOR
+  const add = (k, delta)=>{ const [m,c]=k.split('|'); const key2=`${m}|${c}`; group.set(key2, (group.get(key2)||0)+delta); };
+  for(const [k,qe] of acum.entries()){ const e=ex.get(k)||0; add(k, qe - e); }
+  for(const [k,e] of ex.entries()){ if(!acum.has(k)) add(k, 0 - e); }
+  const res=new Map();
+  for(const [key2,net] of group.entries()){
+    if(net>0) res.set(key2+'|SOB', net);
+    else if(net<0) res.set(key2+'|FAL', Math.abs(net));
+  }
+  return res;
 }
-el('btnGenerarReporte').addEventListener('click', ()=>{
-  const folio = state.folio;
-  if(!folio){ alert('Activa un folio primero.'); return; }
-  // Escaneados = acumulado (global folio)
-  renderMapTable(state.acumulado, 'tablaEscaneados');
-  // Sobrantes = escaneados - existencia
-  const sobr=new Map();
-  for(const [k,qty] of state.acumulado.entries()){
-    const ex = state.existencia.get(k)||0;
-    if(qty>ex) sobr.set(k, qty-ex);
-  }
-  renderMapTable(sobr,'tablaSobrantes');
-  // Faltantes = existencia - escaneados
-  const falt=new Map();
-  for(const [k,ex] of state.existencia.entries()){
-    const qty = state.acumulado.get(k)||0;
-    if(ex>qty) falt.set(k, ex-qty);
-  }
-  renderMapTable(falt,'tablaFaltantes');
-});
-el('btnExportarCSV').addEventListener('click', ()=>{
-  const rows=[], toRows=(tipo,m)=>{ for(const [k,v] of m.entries()) rows.push({TIPO:tipo, CLAVE:k, QTY:v}); };
-  rows.push({TIPO:'ESCANEADOS',CLAVE:'',QTY:''}); toRows('ESCANEADOS', state.acumulado);
-  const sobr=new Map(); for(const [k,qty] of state.acumulado.entries()){ const ex=state.existencia.get(k)||0; if(qty>ex) sobr.set(k,qty-ex); }
-  rows.push({TIPO:'SOBRANTES',CLAVE:'',QTY:''}); toRows('SOBRANTES',sobr);
-  const falt=new Map(); for(const [k,ex] of state.existencia.entries()){ const qty=state.acumulado.get(k)||0; if(ex>qty) falt.set(k,ex-qty); }
-  rows.push({TIPO:'FALTANTES',CLAVE:'',QTY:''}); toRows('FALTANTES',falt);
-  const headers=Object.keys(rows[0]||{TIPO:'',CLAVE:'',QTY:''});
-  const esc=v=>('"'+String(v??'').replace(/"/g,'""')+'"');
-  const csv=[headers.join(','),...rows.map(r=>headers.map(h=>esc(r[h])).join(','))].join('\\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`reporte_${state.folio||'SIN_FOLIO'}.csv`; a.click(); URL.revokeObjectURL(a.href);
-});
+function exportCSV(rows){
+  if(!rows.length) return '';
+  const headers=Object.keys(rows[0]); const esc=v=>('"'+String(v??'').replace(/"/g,'""')+'"');
+  return [headers.join(','), ...rows.map(r=>headers.map(h=>esc(r[h])).join(','))].join('\n');
+}
+el('btnGenerarReporte').onclick=()=>{
+  if(!state.folio) return alert('Activa un folio');
+  updateReportHeader(); // asegura fecha actualizada
+  render('tablaEscaneados', state.acumulado);
+  const sobr=computeSobrantes(state.acumulado, state.existencia);
+  const falt=computeFaltantes(state.acumulado, state.existencia);
+  render('tablaSobrantes', sobr); render('tablaFaltantes', falt);
+  const comp=computeCompensados(state.acumulado, state.existencia);
+  render('tablaComp', comp);
+};
+el('btnExportarCSV').onclick=()=>{
+  const rows=[]; const push=(tipo,map)=>{ for(const [k,v] of map.entries()) rows.push({FOLIO: state.folio || '', ALMACEN: (ALM_NOMBRE[state.almacen]||state.almacen||''), TIPO:tipo, CLAVE:k, QTY:v}); };
+  push('ESCANEADOS',state.acumulado);
+  const sobr=computeSobrantes(state.acumulado, state.existencia); push('SOBRANTES',sobr);
+  const falt=computeFaltantes(state.acumulado, state.existencia); push('FALTANTES',falt);
+  const comp=computeCompensados(state.acumulado, state.existencia); push('COMPENSADOS',comp);
+  const csv=exportCSV(rows);
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`reporte_${state.folio||'SIN_FOLIO'}.csv`; a.click(); URL.revokeObjectURL(a.href);
+};
 
-/* ========= ARRANQUE ========= */
+/* ===== Impresión (4 botones) ===== */
+function printBlocks(only){
+  const blocks=document.querySelectorAll('[data-block]');
+  blocks.forEach(b=>{
+    const ok = only==='todo' ? true : b.getAttribute('data-block')===only;
+    b.style.display = ok ? 'block' : 'none';
+  });
+  window.print();
+  blocks.forEach(b=>b.style.display='block');
+}
+el('btnPrintTodo').onclick = ()=>{ updateReportHeader(); printBlocks('todo'); };
+el('btnPrintFalt').onclick = ()=>{ updateReportHeader(); printBlocks('faltantes'); };
+el('btnPrintSobr').onclick = ()=>{ updateReportHeader(); printBlocks('sobrantes'); };
+el('btnPrintComp').onclick = ()=>{ updateReportHeader(); printBlocks('compensados'); };
+
+/* ===== Historial (últimos folios) ===== */
+import { query as q2 } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+async function loadHist(){
+  const q=query(collection(db,'ciclicos'), orderBy('ts','desc'), limit(30));
+  const snap=await getDocs(q);
+  const rows=[]; snap.forEach(d=>{ const x=d.data()||{}; rows.push({ id:d.id, almacen:x.almacen||'-', status:x.status||'-', ts:x.ts?.toDate?.()?.toLocaleString?.()||'-' }); });
+  el('histList').innerHTML = rows.map(r=>`
+    <div class="flex items-center justify-between border-b py-1">
+      <div><b>${r.id}</b> · ${r.almacen} · ${r.status} · ${r.ts}</div>
+      <div class="flex gap-2">
+        <button class="btn bg-blue-600 text-white" onclick="folioAbrir('${r.id}','${r.almacen}')">Abrir</button>
+      </div>
+    </div>
+  `).join('') || '—';
+}
+window.folioAbrir = async (id, alm)=>{
+  el('folioInput').value=id; if(alm){ state.almacen=alm; }
+  el('btnUsarFolio').click(); showTab('reporte'); // te llevo directo al reporte
+};
+
+/* ===== Arranque ===== */
 addEventListener('DOMContentLoaded', ()=>{
   log('App lista.');
-  const params=new URLSearchParams(location.search);
-  if(params.has('folio')){
-    folioInput.value=params.get('folio');
-    el('btnUsarFolio').click();
-  }
+  const p=new URLSearchParams(location.search);
+  if(p.has('folio')){ el('folioInput').value=p.get('folio'); el('btnUsarFolio').click(); }
+  loadHist();
 });
 </script>
 </body>
