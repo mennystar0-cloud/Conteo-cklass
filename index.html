@@ -114,7 +114,14 @@
 
     <!-- Encabezado de Reporte (SALE EN IMPRESIÓN) -->
     <div id="reportHeader" class="border rounded-xl p-3 mb-3">
-      <div class="flex flex-wrap items-center gap-4 text-sm">
+      <div class="flex items-center gap-4">
+        <img id="hdrLogo" src="" alt="Logo" style="height:48px;width:auto;" />
+        <div>
+          <div class="text-lg font-semibold">Conteo Cíclico CKlass</div>
+          <div class="text-xs text-gray-500">Folio activo y resumen de diferencias</div>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-6 text-sm mt-2">
         <div><b>Folio:</b> <span id="hdrFolio">—</span></div>
         <div><b>Almacén:</b> <span id="hdrAlmacen">—</span></div>
         <div><b>Fecha:</b> <span id="hdrFecha">—</span></div>
@@ -124,7 +131,7 @@
     <div class="flex flex-wrap gap-2 items-center no-print mb-3">
       <button id="btnGenerarReporte" class="btn bg-blue-600 text-white">Generar</button>
       <button id="btnExportarCSV" class="btn bg-gray-100">Exportar CSV</button>
-      <!-- Botones de impresión solicitados -->
+      <!-- Botones de impresión -->
       <button id="btnPrintTodo" class="btn bg-emerald-600 text-white">Imprimir Todo</button>
       <button id="btnPrintFalt" class="btn bg-emerald-600 text-white">Imprimir Faltantes</button>
       <button id="btnPrintSobr" class="btn bg-emerald-600 text-white">Imprimir Sobrantes</button>
@@ -160,13 +167,16 @@
 </div>
 
 <script type="module">
+/* ===== Config de identidad (logo) ===== */
+const LOGO_URL = 'icons/logo.png'; // coloca tu logo aquí o cambia la ruta
+
 /* ===== Utils & UI ===== */
 const $=s=>document.querySelector(s), el=id=>document.getElementById(id);
 const logBox=el('uiLog'); const setText=(id,t)=>el(id).textContent=t;
 function log(...args){ const t=new Date().toLocaleTimeString(); logBox.textContent+=`[${t}] ${args.map(a=>typeof a==='string'?a:JSON.stringify(a)).join(' ')}\n`; logBox.scrollTop=logBox.scrollHeight; }
 el('btnClearLog').onclick=()=>logBox.textContent='';
 el('btnCopyLog').onclick=()=>navigator.clipboard.writeText(logBox.textContent||'');
-const canon=s=>(s==null?'':String(s)).normalize('NFD').replace(/[\u0300-\\u036f]/g,'').trim().toUpperCase();
+const canon=s=>(s==null?'':String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
 function mapTable(map){
   const rows=[...map.entries()].map(([k,v])=>`<tr><td class="px-2">${k}</td><td class="px-2 text-right">${v}</td></tr>`).join('');
   return `<table class="min-w-full text-sm table"><tbody>${rows||'<tr><td class="px-2 text-gray-400">—</td><td></td></tr>'}</tbody></table>`;
@@ -228,6 +238,7 @@ function subAcumulado(f){
 
 /* Actualiza encabezado de Reporte */
 function updateReportHeader(){
+  el('hdrLogo').src = LOGO_URL;
   el('hdrFolio').textContent = state.folio || '—';
   const nombre = ALM_NOMBRE[state.almacen] || state.almacen || '—';
   el('hdrAlmacen').textContent = nombre;
@@ -375,7 +386,6 @@ el('btnPrintSobr').onclick = ()=>{ updateReportHeader(); printBlocks('sobrantes'
 el('btnPrintComp').onclick = ()=>{ updateReportHeader(); printBlocks('compensados'); };
 
 /* ===== Historial (últimos folios) ===== */
-import { query as q2 } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 async function loadHist(){
   const q=query(collection(db,'ciclicos'), orderBy('ts','desc'), limit(30));
   const snap=await getDocs(q);
@@ -391,12 +401,13 @@ async function loadHist(){
 }
 window.folioAbrir = async (id, alm)=>{
   el('folioInput').value=id; if(alm){ state.almacen=alm; }
-  el('btnUsarFolio').click(); showTab('reporte'); // te llevo directo al reporte
+  el('btnUsarFolio').click(); showTab('reporte');
 };
 
 /* ===== Arranque ===== */
 addEventListener('DOMContentLoaded', ()=>{
   log('App lista.');
+  el('hdrLogo').src = LOGO_URL;
   const p=new URLSearchParams(location.search);
   if(p.has('folio')){ el('folioInput').value=p.get('folio'); el('btnUsarFolio').click(); }
   loadHist();
