@@ -195,15 +195,27 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
 
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBGUDLrMfj-8GAJMemkfcHAGmGucMyKKzA",
-  authDomain: "cklass-conteo.firebaseapp.com",
-  projectId: "cklass-conteo",
-  storageBucket: "cklass-conteo.appspot.com",
-  messagingSenderId: "695313165938",
-  appId: "1:695313165938:web:26f2b2f7276968a1ccdceb",
-  measurementId: "G-45LC81EE44"
+  apiKey: "AIzaSyCPMrGQRCeCWJazNE1rX_etVzb_hmvknDI",
+  authDomain: "conteo-ciclico-ac53d.firebaseapp.com",
+  projectId: "conteo-ciclico-ac53d",
+  storageBucket: "conteo-ciclico-ac53d.firebasestorage.app",
+  messagingSenderId: "726286668974",
+  appId: "1:726286668974:web:64bacbef748d759540093f",
+  measurementId: "G-6C6SB2LTSZ"
 };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
 const app=initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
